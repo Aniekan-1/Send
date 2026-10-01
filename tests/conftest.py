@@ -1,14 +1,13 @@
 from contextlib import contextmanager
 
 import pytest
-from eth_utils import keccak
 from web3 import Web3
-from web3.exceptions import ContractCustomError
 from web3.providers.eth_tester import EthereumTesterProvider
 
 from dollardrop import claims
 from dollardrop.arc import usdc
 from dollardrop.compile import compile_all
+from dollardrop.reverts import error_name
 
 DAY = 24 * 60 * 60
 
@@ -95,36 +94,15 @@ def sign(w3, dd):
     return _sign
 
 
-def _error_selector(abi, name):
-    for item in abi:
-        if item["type"] == "error" and item["name"] == name:
-            sig = f"{name}({','.join(i['type'] for i in item['inputs'])})"
-            return "0x" + keccak(text=sig)[:4].hex()
-    raise KeyError(f"no custom error {name!r} in ABI")
-
-
-def _revert_data(exc: BaseException) -> str | None:
-    """Raw revert bytes as 0x-hex, from web3's ContractCustomError or eth-tester's wrapped py-evm Revert."""
-    while exc is not None:
-        if isinstance(exc, ContractCustomError):
-            return exc.data if isinstance(exc.data, str) else "0x" + exc.data.hex()
-        if type(exc).__name__ == "Revert" and exc.args and isinstance(exc.args[0], bytes):
-            return "0x" + exc.args[0].hex()
-        exc = exc.__cause__ or exc.__context__
-    return None
-
-
 @pytest.fixture
 def reverts():
     """with reverts(contract, "ErrorName"): ... asserts the call reverts with that custom error."""
 
     @contextmanager
     def _reverts(contract, name):
-        selector = _error_selector(contract.abi, name)
         with pytest.raises(Exception) as exc:
             yield
-        data = _revert_data(exc.value)
-        assert data is not None, f"expected revert {name}, got {exc.value!r}"
-        assert data.startswith(selector), f"expected {name} ({selector}), got {data[:10]}"
+        got = error_name(contract.abi, exc.value)
+        assert got == name, f"expected revert {name}, got {got or repr(exc.value)}"
 
     return _reverts

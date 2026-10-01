@@ -37,7 +37,7 @@ def main() -> int:
         print("DEPLOYER_PRIVATE_KEY is not set (see .env.example)", file=sys.stderr)
         return 1
 
-    w3 = Web3(Web3.HTTPProvider(os.environ.get("ARC_RPC_URL", ARC_MAINNET_RPC)))
+    w3 = Web3(Web3.HTTPProvider(os.environ.get("ARC_RPC_URL") or ARC_MAINNET_RPC))
     chain_id = w3.eth.chain_id
     network = NETWORKS.get(chain_id)
     if network is None:

@@ -51,7 +51,11 @@ def compile_all() -> dict[str, dict]:
 
 
 def load(name: str) -> dict:
-    return json.loads((BUILD / f"{name}.json").read_text())
+    """Read build/<name>.json, compiling first if it isn't there (build/ is not committed)."""
+    path = BUILD / f"{name}.json"
+    if not path.exists():
+        compile_all()
+    return json.loads(path.read_text())
 
 
 if __name__ == "__main__":

@@ -30,6 +30,7 @@ Known limits: a person with several wallets can claim several drops from the sam
 ```
 contracts/DollarDrop.sol   money box (Solidity + OpenZeppelin)
 dollardrop/                Python package: compile, claim signing, Arc constants
+dollardrop/relayer/        FastAPI relayer that submits claims for recipients
 tests/                     pytest suite against an in-memory EVM
 scripts/                   deployment
 ```
@@ -43,6 +44,25 @@ git submodule update --init          # OpenZeppelin
 uv sync                              # Python 3.12 env + deps
 uv run python -m dollardrop.compile  # build/*.json
 uv run pytest
+```
+
+## Relayer
+
+The relayer submits claims so recipients never need gas. It is repaid a small USDC fee out of the drop,
+signed by the claimer and capped by the campaign. It never sees claim-key secrets, only signatures.
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /health` | Relayer address, balance, chain, contract |
+| `GET /drops/{claimKey}` | Drop amount, status, and the fee to sign |
+| `POST /claims` | `{claimKey, recipient, fee, signature}`; returns `txHash` |
+
+Before spending gas it checks the signature, the fee, and dry-runs the claim, so rejected claims cost
+nothing. Claims are rate-limited per IP (5/min), and it stops relaying when its balance runs low.
+
+```bash
+cp .env.example .env   # set RELAYER_PRIVATE_KEY, and DOLLARDROP_ADDRESS if not in deployments/
+uv run python -m dollardrop.relayer
 ```
 
 ## Arc mainnet
