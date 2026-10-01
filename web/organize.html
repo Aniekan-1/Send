@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Create drops · Dollar Drop</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body class="wide">
+    <header class="brand no-print"><span class="logo">$</span> Dollar Drop <span class="tag">Organizer</span></header>
+
+    <main class="no-print">
+      <section class="card" id="wallet-card">
+        <h1>Hand out dollars with QR codes</h1>
+        <p class="muted">Connect the wallet that holds the USDC you want to give away. It needs a little extra USDC on Arc for network fees.</p>
+        <button class="btn primary" id="connect">Connect wallet</button>
+        <p class="muted small" id="wallet-status"></p>
+      </section>
+
+      <section class="card" id="create-card" hidden>
+        <h2>1. Set up your drops</h2>
+        <form id="create-form" class="grid-form">
+          <label>Dollars per drop <input id="amount" inputmode="decimal" value="10" required /></label>
+          <label>Number of drops <input id="count" type="number" min="1" max="200" value="10" required /></label>
+          <label>Claim before <input id="expires" type="datetime-local" required /></label>
+          <label>Max network fee per claim <input id="fee-cap" inputmode="decimal" value="0.05" required /></label>
+          <p class="muted small span">Each drop can be at most $50 while Dollar Drop is new. The network fee comes out of each drop and pays for the claim; it can't exceed the max you set ($0.10 at most).</p>
+          <button class="btn primary span" type="submit">Create links</button>
+        </form>
+      </section>
+
+      <section class="card" id="backup-card" hidden>
+        <h2>2. Save your backup</h2>
+        <p>Your <strong id="backup-count"></strong> links were made on this device and exist nowhere else. <strong>Download the backup before funding.</strong> Anyone with a link can claim it, so keep the file private.</p>
+        <button class="btn" id="download-backup">Download backup (CSV)</button>
+        <h2>3. Fund the drops</h2>
+        <p id="fund-summary"></p>
+        <button class="btn primary" id="fund" disabled>Fund drops</button>
+        <p class="muted small" id="fund-status"></p>
+      </section>
+
+      <section class="card" id="sheet-card" hidden>
+        <h2>4. Share them</h2>
+        <p>Campaign <strong id="campaign-id"></strong> is live. Print the QR codes, or send links one by one.</p>
+        <div class="row">
+          <button class="btn primary" id="print">Print QR codes</button>
+          <button class="btn" id="download-again">Download links (CSV)</button>
+        </div>
+      </section>
+
+      <section class="card" id="manage-card" hidden>
+        <h2>Manage a campaign</h2>
+        <form id="manage-form" class="row">
+          <input id="manage-id" type="number" min="1" placeholder="Campaign number" required />
+          <button class="btn" type="submit">Look up</button>
+        </form>
+        <div id="manage-out"></div>
+      </section>
+    </main>
+
+    <section id="sheet" class="sheet" aria-label="Printable QR codes"></section>
+    <script type="module" src="/src/organize.ts"></script>
+  </body>
+</html>

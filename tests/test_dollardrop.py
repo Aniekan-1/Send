@@ -387,3 +387,21 @@ def test_contract_balance_always_covers_active_drops(dd, token, accounts, create
     active = [k for k in keys if dd.functions.getDrop(k.address).call()[1] == ACTIVE]
     assert len(active) == 2
     assert balance(token, dd.address) == usdc(10) * len(active)
+
+
+def test_lost_links_can_be_recovered_from_events_and_refunded(w3, dd, token, accounts, create_campaign, sign):
+    """An organizer who loses every link can rebuild the key list from DropCreated logs and refund."""
+    campaign_id, keys = create_campaign(n=3, amount=usdc(10))
+    organizer, relayer, alice = accounts["organizer"], accounts["relayer"], accounts["alice"]
+    dd.functions.claim(keys[0].address, alice, relayer, 0, sign(keys[0], alice, relayer, 0)).transact(
+        {"from": relayer}
+    )
+
+    logs = dd.events.DropCreated().get_logs(from_block=0, argument_filters={"campaignId": campaign_id})
+    recovered = [log.args.claimKey for log in logs]
+    assert recovered == [k.address for k in keys]
+
+    unclaimed = [k for k in recovered if dd.functions.getDrop(k).call()[1] == ACTIVE]
+    before = balance(token, organizer)
+    dd.functions.refund(unclaimed).transact({"from": organizer})
+    assert balance(token, organizer) == before + usdc(20)

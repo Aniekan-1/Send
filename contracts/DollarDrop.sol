@@ -68,7 +68,8 @@ contract DollarDrop is EIP712, ReentrancyGuard {
         uint256 expiresAt,
         uint256 feeCap
     );
-    event DropsAdded(uint64 indexed campaignId, uint256 count);
+    /// @notice One per drop, so an organizer who loses their links can still find and refund every drop.
+    event DropCreated(uint64 indexed campaignId, address indexed claimKey);
     event Claimed(
         address indexed claimKey,
         uint64 indexed campaignId,
@@ -240,8 +241,8 @@ contract DollarDrop is EIP712, ReentrancyGuard {
             if (key == address(0)) revert InvalidClaimKey();
             if (drops[key].status != Status.None) revert DropExists(key);
             drops[key] = Drop({campaignId: campaignId, status: Status.Active});
+            emit DropCreated(campaignId, key);
         }
-        emit DropsAdded(campaignId, n);
 
         usdc.safeTransferFrom(msg.sender, address(this), uint256(amountPerDrop) * n);
     }

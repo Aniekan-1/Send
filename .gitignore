@@ -4,3 +4,8 @@ __pycache__/
 .pytest_cache/
 build/
 .idea/
+.tools/
+node_modules/
+web/dist/
+web/.env.local
+web/.env

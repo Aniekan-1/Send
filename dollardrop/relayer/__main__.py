@@ -15,6 +15,7 @@ from eth_account import Account
 from web3 import Web3
 
 from dollardrop.arc import ARC_MAINNET_RPC, usdc
+from dollardrop.circle import BLOCKCHAINS, CircleClient
 from dollardrop.compile import load
 from dollardrop.relayer.app import create_app
 from dollardrop.relayer.core import Relayer
@@ -53,7 +54,10 @@ def main() -> int:
     relayer = Relayer(w3, contract, Account.from_key(key), min_balance=min_balance)
 
     origins = [o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]
-    app = create_app(relayer, cors_origins=origins)
+    circle = None
+    if circle_key := os.environ.get("CIRCLE_API_KEY"):
+        circle = CircleClient(circle_key, BLOCKCHAINS[relayer.chain_id])
+    app = create_app(relayer, cors_origins=origins, circle=circle)
 
     logging.getLogger(__name__).info("relayer %s for DollarDrop %s on chain %s", relayer.address, address, relayer.chain_id)
     uvicorn.run(app, host=os.environ.get("HOST") or "127.0.0.1", port=int(os.environ.get("PORT") or "8000"))

@@ -31,8 +31,11 @@ Known limits: a person with several wallets can claim several drops from the sam
 contracts/DollarDrop.sol   money box (Solidity + OpenZeppelin)
 dollardrop/                Python package: compile, claim signing, Arc constants
 dollardrop/relayer/        FastAPI relayer that submits claims for recipients
+dollardrop/circle.py       server side of Circle Google/email sign-in (API key stays here)
 tests/                     pytest suite against an in-memory EVM
-scripts/                   deployment
+tests/vectors/             signature vectors checked by both Python and TypeScript
+scripts/                   deployment, local stack
+web/                       claim + organizer pages (TypeScript, Vite, viem)
 ```
 
 ## Development
@@ -44,6 +47,33 @@ git submodule update --init          # OpenZeppelin
 uv sync                              # Python 3.12 env + deps
 uv run python -m dollardrop.compile  # build/*.json
 uv run pytest
+```
+
+## Try it locally (fake USDC)
+
+Needs Node.js and Foundry's `anvil` (on PATH, or in `.tools/`).
+
+```bash
+uv run python scripts/local_stack.py   # local chain + contracts + relayer, writes web/.env.local
+cd web && npm install && npm run dev   # http://localhost:5173/organize.html
+```
+
+Import the organizer test key printed by the script into your browser wallet, create drops, then open a
+link from the backup CSV to claim. End-to-end test against the running stack: `E2E=1 npx vitest run e2e`.
+
+## Web pages
+
+| Page | Who | What |
+| --- | --- | --- |
+| `organize.html` | Organizer | Connect wallet, create links (made in the browser), download backup, fund, print QR sheet, pause or refund |
+| `claim.html` | Recipient | Open link, sign in with Google/email (Circle) or use an existing wallet, claim |
+
+Settings are in `web/.env` (see `web/.env.example`). They are public; never put keys there.
+
+```bash
+cd web
+npm test            # unit tests, including the shared signature vector
+npm run build       # type-check + production build into web/dist
 ```
 
 ## Relayer

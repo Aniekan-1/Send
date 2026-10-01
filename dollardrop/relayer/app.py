@@ -4,6 +4,11 @@
     GET  /drops/{claim_key}    what a drop is worth and the fee to sign
     POST /claims               submit a signed claim
 
+    Only when a Circle API key is configured (Google / email sign-in for recipients):
+    POST /circle/social-token  device token for Google sign-in
+    POST /circle/email-token   device token + emailed one-time code
+    POST /circle/wallet        create (if needed) and return the user's Arc wallet
+
 Run:  uv run python -m dollardrop.relayer
 """
 
@@ -15,6 +20,7 @@ from pydantic import BaseModel, Field
 from web3 import Web3
 
 from dollardrop.arc import NATIVE_DECIMALS
+from dollardrop.circle import CircleClient, CircleError
 from dollardrop.relayer.core import ClaimRejected, Relayer, Status
 from dollardrop.relayer.ratelimit import RateLimiter
 
@@ -33,12 +39,25 @@ class ClaimRequest(BaseModel):
     signature: str = Field(pattern=SIGNATURE)
 
 
+class DeviceRequest(BaseModel):
+    deviceId: str = Field(min_length=1, max_length=200)
+
+
+class EmailRequest(DeviceRequest):
+    email: str = Field(pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$", max_length=254)
+
+
+class UserRequest(BaseModel):
+    userToken: str = Field(min_length=1, max_length=4096)
+
+
 def create_app(
     relayer: Relayer,
     *,
     cors_origins: list[str] | None = None,
     claims_per_minute: int = 5,
     reads_per_minute: int = 60,
+    circle: CircleClient | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Dollar Drop relayer")
     if cors_origins:
@@ -62,6 +81,7 @@ def create_app(
             "balanceUsdc": balance / 10**NATIVE_DECIMALS,
             "chainId": relayer.chain_id,
             "contract": relayer.contract.address,
+            "circle": circle is not None,
         }
 
     @app.get("/drops/{claim_key}")
@@ -106,4 +126,35 @@ def create_app(
             "fee": result.fee,
         }
 
+    if circle is not None:
+        _add_circle_routes(app, circle, RateLimiter(10, 60), client_ip)
+
     return app
+
+
+def _add_circle_routes(app: FastAPI, circle: CircleClient, limit: RateLimiter, client_ip) -> None:
+    def call(request: Request, fn, *args):
+        if not limit.allow(client_ip(request)):
+            raise HTTPException(429, "too many requests")
+        try:
+            return fn(*args)
+        except CircleError as e:
+            log.warning("circle error %s (%s): %s", e.status, e.code, e.message)
+            raise HTTPException(502 if e.status >= 500 else 400, e.message) from None
+
+    @app.post("/circle/social-token")
+    def social_token(body: DeviceRequest, request: Request):
+        return call(request, circle.social_device_token, body.deviceId)
+
+    @app.post("/circle/email-token")
+    def email_token(body: EmailRequest, request: Request):
+        return call(request, circle.email_device_token, body.deviceId, body.email)
+
+    @app.post("/circle/wallet")
+    def wallet(body: UserRequest, request: Request):
+        """First call may return a challengeId the SDK must execute; call again afterwards for the address."""
+        challenge_id = call(request, circle.initialize_user, body.userToken)
+        if challenge_id:
+            return {"challengeId": challenge_id, "address": None}
+        addresses = call(request, circle.wallet_addresses, body.userToken)
+        return {"challengeId": None, "address": addresses[0] if addresses else None}

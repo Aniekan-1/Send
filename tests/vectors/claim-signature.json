@@ -1,0 +1,11 @@
+{
+  "description": "Claim signature shared by Python (tests/test_vectors.py) and TypeScript (web/src/eip712.test.ts). Both must reproduce it exactly.",
+  "claimKeySecret": "0x1111111111111111111111111111111111111111111111111111111111111111",
+  "chainId": 5042,
+  "contract": "0x00000000000000000000000000000000DeaDBeef",
+  "recipient": "0x6813Eb9362372EEF6200f3b1dbC3f819671cBA69",
+  "relayer": "0x2B5AD5c4795c026514f8317c7a215E218DcCD6cF",
+  "fee": 10000,
+  "claimKeyAddress": "0x19E7E376E7C213B7E7e7e46cc70A5dD086DAff2A",
+  "signature": "0x918dbf3ded116996462d394c27c717acca3497af6bac3eb6fa806ec46b763db67c12d0db244edefcd6109d82a8c04a303e7bc121092259f3377fcf1fe7e9f4cc1b"
+}
