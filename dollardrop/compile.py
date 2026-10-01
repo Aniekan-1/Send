@@ -1,0 +1,59 @@
+"""Compile the Solidity contracts with py-solc-x and write ABIs/bytecode to build/.
+
+    python -m dollardrop.compile
+"""
+
+import json
+from pathlib import Path
+
+import solcx
+
+ROOT = Path(__file__).resolve().parent.parent
+CONTRACTS = ROOT / "contracts"
+BUILD = ROOT / "build"
+OZ = ROOT / "lib" / "openzeppelin-contracts" / "contracts"
+
+SOLC_VERSION = "0.8.28"
+# Arc targets the Osaka baseline; cancun is a safe subset that the local test EVM also supports.
+EVM_VERSION = "cancun"
+
+
+def _sources() -> list[Path]:
+    return sorted(CONTRACTS.rglob("*.sol"))
+
+
+def compile_all() -> dict[str, dict]:
+    """Return {contract_name: {"abi": [...], "bytecode": "0x..."}} and write build/<name>.json."""
+    if SOLC_VERSION not in {str(v) for v in solcx.get_installed_solc_versions()}:
+        solcx.install_solc(SOLC_VERSION)
+
+    out = solcx.compile_files(
+        [str(p) for p in _sources()],
+        output_values=["abi", "bin"],
+        solc_version=SOLC_VERSION,
+        import_remappings={"@openzeppelin/contracts": str(OZ)},
+        allow_paths=[str(ROOT)],
+        evm_version=EVM_VERSION,
+        optimize=True,
+        optimize_runs=200,
+    )
+
+    BUILD.mkdir(exist_ok=True)
+    artifacts = {}
+    for key, value in out.items():
+        path, name = key.rsplit(":", 1)
+        if not Path(path).resolve().is_relative_to(CONTRACTS):
+            continue  # skip OpenZeppelin internals
+        artifact = {"abi": value["abi"], "bytecode": "0x" + value["bin"]}
+        artifacts[name] = artifact
+        (BUILD / f"{name}.json").write_text(json.dumps(artifact, indent=2))
+    return artifacts
+
+
+def load(name: str) -> dict:
+    return json.loads((BUILD / f"{name}.json").read_text())
+
+
+if __name__ == "__main__":
+    for contract in compile_all():
+        print(f"compiled {contract} -> build/{contract}.json")
