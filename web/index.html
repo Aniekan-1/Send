@@ -45,8 +45,27 @@
         </div>
         <div class="grid grid-3">
           <div class="card feature"><span class="step-num">1</span><h3>Choose amount and people</h3><p class="muted">Say 30 drops of $10 for a hackathon. Links are created on your device, never on our servers.</p></div>
-          <div class="card feature"><span class="step-num">2</span><h3>Fund from your wallet</h3><p class="muted">The money waits in an open-source contract on Arc. Anything unclaimed comes back to you.</p></div>
+          <div class="card feature"><span class="step-num">2</span><h3>Fund from your wallet or exchange</h3><p class="muted">Pay from a browser wallet, or <a href="#exchange">straight from your exchange</a>. The money waits in an open-source contract on Arc, and anything unclaimed comes back to you.</p></div>
           <div class="card feature"><span class="step-num">3</span><h3>Print the codes or send the links</h3><p class="muted">People scan or tap, sign in with email or their own wallet, and the dollars are theirs in seconds.</p></div>
+        </div>
+      </section>
+
+      <section class="section" id="exchange">
+        <div class="section-head">
+          <span class="eyebrow">Paying from an exchange</span>
+          <h2 style="font-size: 1.8rem">Your USDC is on Kraken or KuCoin? That works too.</h2>
+          <p class="muted">You don't need a crypto wallet app. Dollar Drop gives you a one-time deposit address, you withdraw to it from your exchange, and your drops are funded automatically.</p>
+        </div>
+        <div class="grid grid-4">
+          <div class="card feature"><span class="step-num">1</span><h3>Set up your drops</h3><p class="muted">On <a href="/organize.html">Create drops</a>, choose <strong>Fund from an exchange</strong>, then pick the amount and how many people.</p></div>
+          <div class="card feature"><span class="step-num">2</span><h3>Save your backup file</h3><p class="muted">It downloads to your Downloads folder as <code>dollar-drop-…-KEEP-PRIVATE.csv</code> and holds your links plus the key to your <strong>funding wallet</strong>, the one-time address your money goes to. Keep it private, like a password.</p></div>
+          <div class="card feature"><span class="step-num">3</span><h3>Withdraw from your exchange</h3><p class="muted">Send USDC to the address shown, on the <strong>Arc</strong> network. The page shows the exact amount: your drops plus a few cents of fees.</p></div>
+          <div class="card feature"><span class="step-num">4</span><h3>Drops fund themselves</h3><p class="muted">As soon as the money arrives, your drops go live. Keep the page open until then.</p></div>
+        </div>
+        <div class="card stack">
+          <h3>Getting money back to your exchange</h3>
+          <p class="muted">Refunds of unclaimed drops, and any unused fee money, return to your funding wallet. To manage them, open the <a href="/dashboard.html">Dashboard</a> and choose <strong>Open with my backup file</strong>. The file is read only in your browser, never uploaded. From there you can pause the campaign, refund unclaimed drops, and send the money back to your exchange's USDC deposit address on Arc.</p>
+          <div class="alert warn">Your backup file is the only key to an exchange-funded campaign. If you lose it, people can still claim their drops, but you can't refund unclaimed ones or get leftover money back.</div>
         </div>
       </section>
 

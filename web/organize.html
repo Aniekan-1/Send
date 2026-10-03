@@ -91,8 +91,11 @@
         <div class="alert good">Campaign <strong id="campaign-id"></strong> is live. Print the QR codes, or send links one by one.</div>
         <div class="row">
           <button class="btn primary" id="print">Print QR codes</button>
-          <button class="btn" id="download-again">Download links (CSV)</button>
+          <button class="btn" id="download-again">Download backup again</button>
           <a class="btn ghost" id="track" href="/dashboard.html">Track in dashboard →</a>
+        </div>
+        <div class="alert warn" id="safe-backup" hidden>
+          <strong>Keep your backup file safe.</strong> It's in your Downloads folder, named <code>dollar-drop-…-KEEP-PRIVATE.csv</code>, and it's the only key to this campaign's money. Move a copy somewhere safe, such as a USB stick or a password manager. Don't email or share it: anyone with it can take back unclaimed money.
         </div>
         <p class="muted small" id="leftover" hidden></p>
       </section>

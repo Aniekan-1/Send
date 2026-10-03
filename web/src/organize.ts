@@ -111,7 +111,11 @@ function createLinks() {
 function downloadBackup(campaignId?: bigint) {
   if (!plan) return;
   const csv = backupCsv({ amountUsd: usd(plan.amount).slice(1), secrets: plan.secrets, links: plan.links, fundingKey: plan.fundingKey });
-  downloadText(`dollar-drop-${campaignId ?? "backup"}-${new Date().toISOString().slice(0, 10)}.csv`, csv);
+  // Name it so it stands out in the Downloads folder and says it matters.
+  const name = campaignId === undefined
+    ? `dollar-drop-backup-${new Date().toISOString().slice(0, 10)}-KEEP-PRIVATE.csv`
+    : `dollar-drop-campaign-${campaignId}-KEEP-PRIVATE.csv`;
+  downloadText(name, csv);
 }
 
 function afterBackup() {
@@ -231,7 +235,7 @@ async function showDeposit(p: Plan) {
       if (leftover > 0n) {
         $("#leftover").hidden = false;
         $("#leftover").textContent =
-          `${usd(leftover)} of unused fee money stays in your funding wallet. You can send it back to your exchange from the dashboard using your backup file.`;
+          `${usd(leftover)} of unused fee money stays in your funding wallet. You can send it back to your exchange from the Dashboard with "Open with my backup file".`;
       }
     } catch (e) {
       funding = false;
@@ -253,6 +257,7 @@ async function showFunded(campaignId: bigint) {
   $("#sheet-card").hidden = false;
   $("#sheet-card").scrollIntoView({ behavior: "smooth" });
   $("#download-again").onclick = () => downloadBackup(campaignId);
+  $("#safe-backup").hidden = !plan.fundingKey; // exchange-funded: the file is the only key to the money
   $<HTMLAnchorElement>("#track").href = `/dashboard.html#campaign-${campaignId}`;
   const codes = await Promise.all(plan.links.map((l) => QRCode.toDataURL(l, { margin: 1, width: 360 })));
   $("#sheet").innerHTML = codes
@@ -318,7 +323,7 @@ if (pending?.fundingKey) {
   $("#discard").onclick = async () => {
     const held = await usdcBalance(privateKeyToAccount(pending.fundingKey!).address).catch(() => 0n);
     const warning = held > 0n
-      ? `That funding wallet already holds ${usd(held)}. Only discard if you have the backup file: you'll need it to get the money back (Dashboard → Open with backup file). Discard?`
+      ? `That funding wallet already holds ${usd(held)}. Only discard if you have the backup file: you'll need it to get the money back (Dashboard → Open with my backup file). Discard?`
       : "Discard this unfunded campaign?";
     if (!confirm(warning)) return;
     localStorage.removeItem(PENDING);

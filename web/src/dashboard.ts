@@ -108,8 +108,9 @@ async function renderOrganizer() {
         <h2>Your campaigns</h2>
         <p class="muted">Connect the wallet you created drops with to see their progress, pause them, or refund unclaimed money.</p>
         <button class="btn primary" data-act="connect">Connect wallet</button>
-        <label class="btn" style="display:flex">Open with backup file (exchange-funded)
+        <label class="btn" style="display:flex">Open with my backup file
           <input type="file" id="backup-file" accept=".csv,text/csv" hidden /></label>
+        <p class="muted small">Funded your drops from an exchange? Choose the backup file you downloaded when you created them; look in your Downloads folder for a file starting with <code>dollar-drop-</code>. It's read only in this browser, never uploaded, and lets you refund unclaimed drops and send money back to your exchange.</p>
         <div class="divider"><span>or look up any organizer (read only)</span></div>
         <form class="row tight" id="lookup">
           <input id="lookup-address" placeholder="0x… wallet address" autocomplete="off" spellcheck="false" />
