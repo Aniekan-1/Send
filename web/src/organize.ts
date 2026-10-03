@@ -14,7 +14,7 @@ import { type Address, type Hex, erc20Abi, parseEventLogs } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import QRCode from "qrcode";
 import { backupCsv, downloadText } from "./backup";
-import { MIN_PASSWORD, decryptKey, encryptKey } from "./vault";
+import { MIN_PASSWORD, decryptKey, decryptKeys, encryptKey, encryptKeys } from "./vault";
 import { USDC, arc, publicClient, requireContract } from "./config";
 import { type Connection, connectWallet, connectWithKey, ensureArc, usdcBalance } from "./connect";
 import { usd, parseUsd } from "./format";
@@ -43,6 +43,7 @@ interface Plan {
   fundingKey?: Hex; // exchange mode only; kept in memory, never stored in plain text
   fundingAddress?: Address;
   fundingSecret?: string; // the funding key encrypted with the organizer's password (enc:v1:…)
+  sealedSecrets?: string; // the claim keys encrypted with the same password, for resuming a deposit
   funded?: boolean;
 }
 
@@ -121,6 +122,7 @@ async function protectFundingKey() {
   if (password !== $<HTMLInputElement>("#backup-password2").value) throw new Error("The two passwords don't match.");
   $("#backup-error").textContent = "Protecting your backup…";
   plan.fundingSecret = await encryptKey(plan.fundingKey, password);
+  plan.sealedSecrets = await encryptKeys(plan.secrets, password);
   $("#backup-error").textContent = "";
   $("#backup-password-fields").hidden = true;
 }
@@ -202,8 +204,11 @@ async function feeBudget(drops: number): Promise<bigint> {
 }
 
 function savePending(p: Plan) {
-  // The funding key is stored only in its password-encrypted form.
-  const json = JSON.stringify({ ...p, fundingKey: undefined }, (_, v) => (typeof v === "bigint" ? `${v}n` : v));
+  // The funding key and claim keys are stored only in their password-encrypted form; links are rebuilt from the keys.
+  const json = JSON.stringify(
+    { ...p, fundingKey: undefined, secrets: undefined, links: undefined },
+    (_, v) => (typeof v === "bigint" ? `${v}n` : v),
+  );
   localStorage.setItem(PENDING, json);
 }
 
@@ -337,7 +342,16 @@ if (pending?.fundingSecret && pending.fundingAddress) {
   $("#resume-form").onsubmit = (e) => {
     e.preventDefault();
     act(async () => {
-      pending.fundingKey = await decryptKey(pending.fundingSecret!, $<HTMLInputElement>("#resume-password").value);
+      const password = $<HTMLInputElement>("#resume-password").value;
+      pending.fundingKey = await decryptKey(pending.fundingSecret!, password);
+      if (pending.sealedSecrets) {
+        pending.secrets = await decryptKeys(pending.sealedSecrets, password);
+        pending.links = pending.secrets.map((s) => claimLink(siteUrl(), s));
+      } else {
+        // Saved before claim keys were encrypted: seal them now and drop the plain copy.
+        pending.sealedSecrets = await encryptKeys(pending.secrets, password);
+        savePending(pending);
+      }
       plan = pending;
       mode = "exchange";
       $("#resume-card").hidden = true;

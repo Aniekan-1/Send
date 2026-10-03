@@ -58,6 +58,11 @@ def test_get_drop_returns_amount_and_fee_quote(client, relayer, create_campaign)
     assert body["relayer"] == relayer.address
 
 
+@pytest.mark.parametrize("path", ["/docs", "/redoc", "/openapi.json"])
+def test_api_docs_not_exposed(client, path):
+    assert client.get(path).status_code == 404
+
+
 def test_get_unknown_drop_is_404(client):
     assert client.get(f"/drops/{Account.create().address}").status_code == 404
 

@@ -77,7 +77,8 @@ def create_app(
     indexer: Indexer | None = None,
     admin_token: str | None = None,
 ) -> FastAPI:
-    app = FastAPI(title="Dollar Drop relayer")
+    # No /docs, /redoc or /openapi.json in production: the routes are listed in this module's docstring.
+    app = FastAPI(title="Dollar Drop relayer", docs_url=None, redoc_url=None, openapi_url=None)
     if cors_origins:
         app.add_middleware(
             CORSMiddleware, allow_origins=cors_origins, allow_methods=["GET", "POST"], allow_headers=["*"]

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { privateKeyToAccount } from "viem/accounts";
 import { backupCsv, fundingEntry, unlockFunding } from "./backup";
 import { claimLink, newClaimSecret } from "./links";
-import { decryptKey, encryptKey } from "./vault";
+import { decryptKey, decryptKeys, encryptKey, encryptKeys } from "./vault";
 
 const PASSWORD = "correct horse battery";
 
@@ -23,6 +23,11 @@ describe("vault", () => {
   it("uses a fresh salt every time", async () => {
     const key = newClaimSecret();
     expect(await encryptKey(key, PASSWORD)).not.toBe(await encryptKey(key, PASSWORD));
+  });
+
+  it("round-trips several keys in order", async () => {
+    const keys = [newClaimSecret(), newClaimSecret(), newClaimSecret()];
+    expect(await decryptKeys(await encryptKeys(keys, PASSWORD), PASSWORD)).toEqual(keys);
   });
 
   it("refuses short passwords", async () => {

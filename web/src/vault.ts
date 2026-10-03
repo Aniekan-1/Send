@@ -2,10 +2,10 @@
 //
 // Format: enc:v1:<salt>:<iv>:<ciphertext>   (base64url parts)
 //   key  = PBKDF2-SHA256(password, salt, 600 000 iterations) -> 256-bit AES key
-//   data = AES-256-GCM(key, iv, the 32-byte private key)
+//   data = AES-256-GCM(key, iv, the 32-byte private key, or several of them back to back)
 // GCM authenticates the data, so a wrong password fails instead of yielding a wrong key.
 // Everything runs in the browser's Web Crypto; the password is never stored or sent.
-import { type Hex, bytesToHex, hexToBytes } from "viem";
+import { type Hex, bytesToHex, concat, hexToBytes } from "viem";
 
 const PREFIX = "enc:v1:";
 const ITERATIONS = 600_000; // OWASP 2023 guidance for PBKDF2-SHA256
@@ -49,4 +49,14 @@ export async function decryptKey(blob: string, password: string): Promise<Hex> {
   } catch {
     throw new Error("That password doesn't open this backup file.");
   }
+}
+
+/** Several 32-byte keys under one password, e.g. a pending campaign's claim keys. */
+export async function encryptKeys(keys: Hex[], password: string): Promise<string> {
+  return encryptKey(concat(keys), password);
+}
+
+export async function decryptKeys(blob: string, password: string): Promise<Hex[]> {
+  const bytes = hexToBytes(await decryptKey(blob, password));
+  return Array.from({ length: bytes.length / 32 }, (_, i) => bytesToHex(bytes.slice(i * 32, (i + 1) * 32)));
 }
