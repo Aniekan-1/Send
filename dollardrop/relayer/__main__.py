@@ -70,7 +70,8 @@ def main() -> int:
     admin_token = os.environ.get("ADMIN_TOKEN") or None
     if not admin_token:
         logging.getLogger(__name__).warning("ADMIN_TOKEN not set; the operator dashboard is disabled")
-    app = create_app(relayer, cors_origins=origins, circle=circle, indexer=indexer, admin_token=admin_token)
+    app = create_app(relayer, cors_origins=origins, circle=circle, indexer=indexer, admin_token=admin_token,
+                     client_ip_header=os.environ.get("CLIENT_IP_HEADER") or None)
 
     logging.getLogger(__name__).info("relayer %s for DollarDrop %s on chain %s", relayer.address, address, relayer.chain_id)
     uvicorn.run(app, host=os.environ.get("HOST") or "127.0.0.1", port=int(os.environ.get("PORT") or "8000"))

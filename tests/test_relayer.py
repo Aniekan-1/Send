@@ -46,6 +46,13 @@ def test_health(client, relayer):
     assert body["relayer"] == relayer.address
 
 
+def test_security_headers(client):
+    headers = client.get("/health").headers
+    assert headers["x-content-type-options"] == "nosniff"
+    assert "frame-ancestors 'none'" in headers["content-security-policy"]
+    assert headers["strict-transport-security"].startswith("max-age=")
+
+
 def test_get_drop_returns_amount_and_fee_quote(client, relayer, create_campaign):
     _, keys = create_campaign(amount=usdc(10), fee_cap=usdc("0.05"))
 
@@ -210,6 +217,25 @@ def test_claims_are_rate_limited(relayer, accounts):
     codes = [client.post("/claims", json=junk).status_code for _ in range(3)]
     assert codes[-1] == 429
     assert 429 not in codes[:2]
+
+
+def _claim_codes(client, accounts, headers):
+    junk = {"claimKey": Account.create().address, "recipient": accounts["alice"], "fee": 1, "signature": "0x" + "11" * 65}
+    return [client.post("/claims", json=junk, headers=h).status_code for h in headers]
+
+
+def test_rate_limit_uses_trusted_client_ip_header(relayer, accounts):
+    client = TestClient(create_app(relayer, claims_per_minute=1, client_ip_header="True-Client-IP"))
+    codes = _claim_codes(client, accounts, [{"True-Client-IP": "1.1.1.1"}, {"True-Client-IP": "2.2.2.2"},
+                                            {"True-Client-IP": "1.1.1.1"}])
+    assert codes[2] == 429  # same visitor again
+    assert 429 not in codes[:2]  # two visitors behind one proxy get separate limits
+
+
+def test_client_ip_header_ignored_unless_configured(relayer, accounts):
+    client = TestClient(create_app(relayer, claims_per_minute=1))
+    codes = _claim_codes(client, accounts, [{"True-Client-IP": "1.1.1.1"}, {"True-Client-IP": "2.2.2.2"}])
+    assert codes[1] == 429  # a forged header doesn't buy a fresh limit
 
 
 def test_rate_limiter_window_slides():

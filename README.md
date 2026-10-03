@@ -95,6 +95,33 @@ cp .env.example .env   # set RELAYER_PRIVATE_KEY, and DOLLARDROP_ADDRESS if not 
 uv run python -m dollardrop.relayer
 ```
 
+## Deploy on Render
+
+`render.yaml` describes both services: Render dashboard → New → Blueprint → this repo. On the first deploy,
+fill in the values it asks for:
+
+- `dollardrop-relayer`: `RELAYER_PRIVATE_KEY` (a hot wallet with a small USDC float), `CIRCLE_API_KEY`
+  (optional), and `CORS_ORIGINS` = the static site's URL. `ADMIN_TOKEN` is generated; copy it from the
+  Environment tab.
+- `dollardrop-web`: `VITE_RELAYER_URL` = the relayer's URL, plus the optional Circle / explorer values.
+
+The site's URLs are only known after the first deploy, so set `CORS_ORIGINS` and `VITE_RELAYER_URL`
+then and redeploy both. The pages' Content-Security-Policy is built from `VITE_RELAYER_URL` and
+`VITE_RPC_URL`, so the site has to be rebuilt whenever either changes.
+
+Rate limits key on Cloudflare's `True-Client-IP` header (`CLIENT_IP_HEADER`). To check that it can't
+be forged, send 6 claims to the live relayer with a different made-up IP each time. The 6th should still
+get `429`:
+
+```bash
+junk='{"claimKey":"0x000000000000000000000000000000000000dEaD","recipient":"0x000000000000000000000000000000000000dEaD","fee":1,"signature":"0x'$(printf '11%.0s' $(seq 65))'"}'
+for i in 1 2 3 4 5 6; do curl -s -o /dev/null -w '%{http_code} ' -H "True-Client-IP: 10.0.0.$i" \
+  -H 'Content-Type: application/json' -d "$junk" https://<relayer>.onrender.com/claims; done
+```
+
+Expect `409 409 409 409 409 429` (the junk claim is refused without spending gas). Six non-429 codes
+mean the header can be forged, so the limits can be dodged until that is fixed.
+
 ## Arc mainnet
 
 | | |

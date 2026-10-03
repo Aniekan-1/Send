@@ -1,0 +1,73 @@
+# Render Blueprint: the relayer (Python web service) and the pages (static site).
+# Dashboard → New → Blueprint → pick this repo. Values marked sync: false are asked for on first deploy.
+services:
+  - name: dollardrop-relayer
+    type: web
+    runtime: python
+    plan: free # sleeps after 15 idle minutes (first claim then waits ~1 min); "starter" stays up
+    # Compiling here (needs the OpenZeppelin submodule, which Render clones) keeps the first request fast.
+    buildCommand: pip install uv && uv sync --frozen --no-dev && uv run --no-sync python -m dollardrop.compile
+    startCommand: uv run --no-sync python -m dollardrop.relayer
+    healthCheckPath: /health
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      # Render puts Cloudflare in front and it overwrites this header with the visitor's IP.
+      # X-Forwarded-For is not safe here: Render appends to whatever the client sent.
+      - key: CLIENT_IP_HEADER
+        value: True-Client-IP
+      - key: MIN_RELAYER_BALANCE_USDC
+        value: "1"
+      - key: RELAYER_PRIVATE_KEY
+        sync: false
+      - key: CORS_ORIGINS # the static site's URL, e.g. https://dollardrop-web.onrender.com
+        sync: false
+      - key: CIRCLE_API_KEY
+        sync: false
+      - key: ADMIN_TOKEN
+        generateValue: true
+
+  - name: dollardrop-web
+    type: web
+    runtime: static
+    buildCommand: cd web && npm ci && npm run build
+    staticPublishPath: web/dist
+    envVars:
+      # Build-time and public: they end up in the browser bundle and in its Content-Security-Policy.
+      - key: VITE_CHAIN_ID
+        value: "5042"
+      - key: VITE_RPC_URL
+        value: https://rpc.mainnet.arc.io
+      - key: VITE_DOLLARDROP_ADDRESS
+        value: "0x5202b7d0fE0722BDDe5847e0c3708CC40D94439c"
+      - key: VITE_DEPLOY_BLOCK
+        value: "24027151"
+      - key: VITE_RELAYER_URL # the relayer's URL, e.g. https://dollardrop-relayer.onrender.com
+        sync: false
+      - key: VITE_EXPLORER_URL
+        sync: false
+      - key: VITE_CIRCLE_APP_ID
+        sync: false
+      - key: VITE_GOOGLE_CLIENT_ID
+        sync: false
+    # The rest of the CSP is a <meta> tag written at build time (web/vite.config.ts); frame-ancestors
+    # only works as a header.
+    headers:
+      - path: /*
+        name: Content-Security-Policy
+        value: frame-ancestors 'none'
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: no-referrer
+      - path: /*
+        name: Strict-Transport-Security
+        value: max-age=31536000; includeSubDomains
+      - path: /*
+        name: Permissions-Policy
+        value: camera=(), microphone=(), geolocation=(), payment=()

@@ -42,6 +42,15 @@ HTTP_STATUS = {"invalid": 400, "conflict": 409, "unavailable": 503}
 ADDRESS = r"^0x[0-9a-fA-F]{40}$"
 SIGNATURE = r"^0x[0-9a-fA-F]{130}$"
 
+# A JSON API: nothing here should ever render as a page, be framed or be cached by a shared proxy.
+SECURITY_HEADERS = {
+    "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+    "Cache-Control": "no-store",
+}
+
 
 class ClaimRequest(BaseModel):
     claimKey: str = Field(pattern=ADDRESS)
@@ -76,9 +85,17 @@ def create_app(
     circle: CircleClient | None = None,
     indexer: Indexer | None = None,
     admin_token: str | None = None,
+    client_ip_header: str | None = None,
 ) -> FastAPI:
     # No /docs, /redoc or /openapi.json in production: the routes are listed in this module's docstring.
     app = FastAPI(title="Dollar Drop relayer", docs_url=None, redoc_url=None, openapi_url=None)
+
+    @app.middleware("http")
+    async def security_headers(request: Request, call_next):
+        response = await call_next(request)
+        response.headers.update(SECURITY_HEADERS)
+        return response
+
     if cors_origins:
         app.add_middleware(
             CORSMiddleware, allow_origins=cors_origins, allow_methods=["GET", "POST"], allow_headers=["*"]
@@ -88,7 +105,10 @@ def create_app(
     read_limit = RateLimiter(reads_per_minute, 60)
 
     def client_ip(request: Request) -> str:
-        # Behind a proxy, configure it to set the client address (e.g. uvicorn --proxy-headers).
+        # Behind a proxy every request comes from the proxy, so read the visitor's address from the header
+        # it sets. Only use a header the proxy overwrites (Render: True-Client-IP); X-Forwarded-For is forgeable.
+        if client_ip_header and (forwarded := request.headers.get(client_ip_header, "").strip()):
+            return forwarded
         return request.client.host if request.client else "unknown"
 
     @app.get("/health")
