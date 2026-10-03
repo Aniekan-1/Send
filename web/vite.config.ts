@@ -11,6 +11,7 @@ export default defineConfig({
         index: resolve(import.meta.dirname, "index.html"),
         claim: resolve(import.meta.dirname, "claim.html"),
         organize: resolve(import.meta.dirname, "organize.html"),
+        wallet: resolve(import.meta.dirname, "wallet.html"),
       },
     },
   },

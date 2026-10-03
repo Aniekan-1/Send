@@ -1,0 +1,10 @@
+{
+  "network": "arc-mainnet",
+  "chainId": 5042,
+  "address": "0x5202b7d0fE0722BDDe5847e0c3708CC40D94439c",
+  "usdc": "0x3600000000000000000000000000000000000000",
+  "txHash": "0x7ea0414e3c1b00f77fdfd37105fdd939da5a001c2db559879faa5c8ce42f754b",
+  "block": 24027151,
+  "deployer": "0x148Ea81a63ED33dE1FA6b449D2Fc81bBBbc0f978",
+  "deployedAt": "2026-10-03T09:17:10+00:00"
+}

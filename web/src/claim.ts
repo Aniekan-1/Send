@@ -20,6 +20,7 @@ const app = $("#app");
 let secret: Hex;
 let drop: DropInfo;
 let circleAvailable = false;
+let recipientIsCircle = false;
 
 // Loaded on demand so the claim page works even if the Circle SDK can't load.
 const circle = () => import("./circle");
@@ -79,9 +80,11 @@ function showEmail() {
     const email = $<HTMLInputElement>("#email", app).value.trim();
     run(async () => {
       busy("Check your inbox for a code…");
-      const { emailLogin, walletAddress } = await circle();
-      const address = await walletAddress(await emailLogin(email));
-      showConfirm(address, "your new wallet");
+      const { emailLogin, saveSession, walletAddress } = await circle();
+      const session = await emailLogin(email);
+      saveSession(session);
+      const address = await walletAddress(session);
+      showConfirm(address, "your new wallet", true);
     });
   });
 }
@@ -113,7 +116,8 @@ function showOwnWallet() {
   });
 }
 
-function showConfirm(recipient: Address, label: string) {
+function showConfirm(recipient: Address, label: string, viaCircle = false) {
+  recipientIsCircle = viaCircle;
   show(html`
     ${raw(amountHeader())}
     <div class="stack">
@@ -129,13 +133,18 @@ function busy(message: string) {
   show(html`<div class="spinner" aria-hidden="true"></div><p class="center">${message}</p>`);
 }
 
-function showDone(txHash: string, recipient: Address, amount: number) {
+function showDone(txHash: string, recipient: Address, amount: number, circleWallet: boolean) {
   const link = txLink(txHash);
+  const next = circleWallet
+    ? html`<a class="btn primary" href="/wallet.html">Open my wallet</a>
+        <p class="center muted small">Send it to a friend or an exchange from your wallet.</p>`
+    : html`<p class="center muted small">Want to cash out? <a href="/wallet.html#cash-out">Here's how</a>.</p>`;
   show(html`
     <p class="big-check" aria-hidden="true">✓</p>
     <h1 class="center">${usd(amount)} is yours</h1>
     <p class="center muted">It's in <code>${shortAddress(recipient)}</code>, ready to spend or send.</p>
-    ${link ? raw(html`<p class="center"><a href="${link}" target="_blank" rel="noopener">View the transaction</a></p>`) : ""}`);
+    ${link ? raw(html`<p class="center"><a href="${link}" target="_blank" rel="noopener">View the transaction</a></p>`) : ""}
+    <div class="stack">${raw(next)}</div>`);
 }
 
 // ------------------------------------------------------------------ actions
@@ -165,7 +174,7 @@ async function claim(recipient: Address) {
   try {
     const result = await api.claim({ claimKey: drop.claim_key, recipient, fee: drop.fee, signature });
     sessionStorage.removeItem(SECRET);
-    showDone(result.txHash, result.recipient, result.amount);
+    showDone(result.txHash, result.recipient, result.amount, recipientIsCircle);
   } catch (e) {
     if (e instanceof ApiError && e.status === 409) return explainUnavailable(e.detail);
     throw e;
@@ -222,10 +231,12 @@ async function main() {
   if (sessionStorage.getItem(PENDING_GOOGLE)) {
     busy("Signing you in…");
     return run(async () => {
-      const { resumeGoogleLogin, walletAddress } = await circle();
-      const session = resumeGoogleLogin();
-      if (!session) return showChoose();
-      showConfirm(await walletAddress(await session), "your new wallet");
+      const { resumeGoogleLogin, saveSession, walletAddress } = await circle();
+      const pending = resumeGoogleLogin();
+      if (!pending) return showChoose();
+      const session = await pending;
+      saveSession(session);
+      showConfirm(await walletAddress(session), "your new wallet", true);
     });
   }
   showChoose();

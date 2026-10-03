@@ -156,3 +156,8 @@ input {
   .ticket figcaption { display: grid; font-size: 10pt; }
   .ticket strong { font-size: 16pt; }
 }
+
+.ok { color: var(--accent); font-weight: 600; }
+.row.tight { margin-top: 0; flex-wrap: nowrap; }
+.row.tight input { flex: 1; }
+.btn.small { min-height: 32px; padding: 0 10px; font-size: 0.85rem; }

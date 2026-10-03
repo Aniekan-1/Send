@@ -11,9 +11,31 @@ import { type Address, getAddress } from "viem";
 import { api } from "./api";
 import { PENDING_GOOGLE, config } from "./config";
 
-interface Session {
+export interface Session {
   userToken: string;
   encryptionKey: string;
+}
+
+const SESSION = "dd:circle-session";
+
+/** Keep the signed-in session for this tab only, so the claim page can hand over to My wallet. */
+export function saveSession(session: Session) {
+  sessionStorage.setItem(SESSION, JSON.stringify(session));
+}
+export function loadSession(): Session | null {
+  const saved = sessionStorage.getItem(SESSION);
+  return saved ? (JSON.parse(saved) as Session) : null;
+}
+export function clearSession() {
+  sessionStorage.removeItem(SESSION);
+}
+
+/** Ask the user to approve a Circle challenge (wallet creation, a transfer) in Circle's own screen. */
+function executeChallenge(session: Session, challengeId: string): Promise<void> {
+  getSdk().setAuthentication(session);
+  return new Promise((resolve, reject) =>
+    getSdk().execute(challengeId, (error) => (error ? reject(new Error(error.message)) : resolve())),
+  );
 }
 
 type DeviceTokens = Pick<LoginConfigs, "deviceToken" | "deviceEncryptionKey">;
@@ -92,10 +114,7 @@ export async function walletAddress(session: Session): Promise<Address> {
   let { challengeId, address } = await api.circleWallet(session.userToken);
 
   if (challengeId) {
-    getSdk().setAuthentication(session);
-    await new Promise<void>((resolve, reject) =>
-      getSdk().execute(challengeId!, (error) => (error ? reject(new Error(error.message)) : resolve())),
-    );
+    await executeChallenge(session, challengeId);
     // Wallet creation finishes shortly after the challenge; poll briefly.
     for (let i = 0; i < 10 && !address; i++) {
       await new Promise((r) => setTimeout(r, 1000));
@@ -105,4 +124,10 @@ export async function walletAddress(session: Session): Promise<Address> {
 
   if (!address) throw new Error("Your wallet is still being created. Please try again in a moment.");
   return getAddress(address);
+}
+
+/** Send USDC from the signed-in user's wallet. The user approves it in Circle's screen. */
+export async function sendUsdc(session: Session, to: Address, amount: string): Promise<void> {
+  const { challengeId } = await api.circleTransfer(session.userToken, to, amount);
+  await executeChallenge(session, challengeId);
 }

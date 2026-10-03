@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <title>My wallet · Dollar Drop</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header class="brand"><span class="logo">$</span> Dollar Drop <span class="tag">My wallet</span></header>
+    <main>
+      <section class="card" id="app" aria-live="polite">
+        <p class="muted">Loading…</p>
+      </section>
+
+      <section class="card" id="cash-out">
+        <h2>How to cash out</h2>
+        <p>Your dollars are USDC on the <strong>Arc</strong> network. To turn them into money in your bank:</p>
+        <ol class="steps">
+          <li>Open an exchange account that supports <strong>USDC on Arc</strong>, for example Kraken or KuCoin.</li>
+          <li>In the exchange, choose <em>Deposit → USDC</em> and pick <strong>Arc</strong> as the network. Copy the deposit address it shows.</li>
+          <li>Send your USDC to that address from this page.</li>
+          <li>Sell it or withdraw it to your bank from the exchange.</li>
+        </ol>
+        <p class="error small">Always choose the Arc network when depositing. Money sent on the wrong network can be lost.</p>
+        <p class="muted small">Exchange support changes over time; check your exchange's deposit page before sending.</p>
+      </section>
+    </main>
+    <footer class="foot">We never ask for passwords or recovery phrases. Only you can approve a payment.</footer>
+    <script type="module" src="/src/wallet.ts"></script>
+  </body>
+</html>

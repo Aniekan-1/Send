@@ -11,6 +11,8 @@ import uuid
 
 import httpx
 
+from dollardrop.arc import ARC_USDC
+
 CIRCLE_API = "https://api.circle.com"
 ALREADY_INITIALIZED = 155106
 
@@ -74,6 +76,43 @@ class CircleClient:
             raise
         return data.get("challengeId")
 
-    def wallet_addresses(self, user_token: str) -> list[str]:
+    def wallets(self, user_token: str) -> list[dict]:
+        """The user's wallets on our Arc network: [{"id", "address", "blockchain", ...}]."""
         data = self._request("GET", f"/v1/w3s/wallets?blockchain={self.blockchain}", user_token=user_token)
-        return [w["address"] for w in data.get("wallets", []) if w.get("blockchain") == self.blockchain]
+        return [w for w in data.get("wallets", []) if w.get("blockchain") == self.blockchain]
+
+    def wallet_addresses(self, user_token: str) -> list[str]:
+        return [w["address"] for w in self.wallets(user_token)]
+
+    def _usdc_token_id(self, user_token: str, wallet_id: str) -> str | None:
+        """Circle's id for USDC in this wallet, if Circle lists it among the wallet's balances."""
+        data = self._request("GET", f"/v1/w3s/wallets/{wallet_id}/balances", user_token=user_token)
+        for balance in data.get("tokenBalances", []):
+            token = balance.get("token", {})
+            if token.get("symbol") == "USDC" and token.get("blockchain") == self.blockchain:
+                return token.get("id")
+        return None
+
+    def create_transfer(self, user_token: str, destination: str, amount: str) -> str:
+        """Start a USDC transfer from the user's wallet. Returns a challengeId the user approves in the SDK."""
+        wallets = self.wallets(user_token)
+        if not wallets:
+            raise CircleError(404, None, "no Arc wallet for this user")
+        wallet_id = wallets[0]["id"]
+
+        token_id = self._usdc_token_id(user_token, wallet_id)
+        token = {"tokenId": token_id} if token_id else {"tokenAddress": ARC_USDC, "blockchain": self.blockchain}
+        data = self._request(
+            "POST",
+            "/v1/w3s/user/transactions/transfer",
+            user_token=user_token,
+            json={
+                "idempotencyKey": str(uuid.uuid4()),
+                "walletId": wallet_id,
+                **token,
+                "destinationAddress": destination,
+                "amounts": [amount],
+                "feeLevel": "MEDIUM",
+            },
+        )
+        return data["challengeId"]

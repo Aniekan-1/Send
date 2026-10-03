@@ -78,4 +78,6 @@ export const api = {
     }),
   circleWallet: (userToken: string) =>
     post<{ challengeId: string | null; address: Address | null }>("/circle/wallet", { userToken }),
+  circleTransfer: (userToken: string, destinationAddress: Address, amount: string) =>
+    post<{ challengeId: string }>("/circle/transfer", { userToken, destinationAddress, amount }),
 };

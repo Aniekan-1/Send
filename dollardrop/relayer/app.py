@@ -8,18 +8,20 @@
     POST /circle/social-token  device token for Google sign-in
     POST /circle/email-token   device token + emailed one-time code
     POST /circle/wallet        create (if needed) and return the user's Arc wallet
+    POST /circle/transfer      start a USDC transfer out of the user's wallet (user approves in the SDK)
 
 Run:  uv run python -m dollardrop.relayer
 """
 
 import logging
+from decimal import Decimal
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from web3 import Web3
 
-from dollardrop.arc import NATIVE_DECIMALS
+from dollardrop.arc import ARC_USDC, NATIVE_DECIMALS
 from dollardrop.circle import CircleClient, CircleError
 from dollardrop.relayer.core import ClaimRejected, Relayer, Status
 from dollardrop.relayer.ratelimit import RateLimiter
@@ -49,6 +51,11 @@ class EmailRequest(DeviceRequest):
 
 class UserRequest(BaseModel):
     userToken: str = Field(min_length=1, max_length=4096)
+
+
+class TransferRequest(UserRequest):
+    destinationAddress: str = Field(pattern=ADDRESS)
+    amount: str = Field(pattern=r"^(0|[1-9]\d{0,8})(\.\d{1,6})?$")  # dollars, up to 6 decimals
 
 
 def create_app(
@@ -127,12 +134,14 @@ def create_app(
         }
 
     if circle is not None:
-        _add_circle_routes(app, circle, RateLimiter(10, 60), client_ip)
+        # Money sent to these addresses is lost or stuck, so refuse them up front.
+        unsafe = {"0x0000000000000000000000000000000000000000", ARC_USDC.lower(), relayer.contract.address.lower()}
+        _add_circle_routes(app, circle, RateLimiter(10, 60), client_ip, unsafe)
 
     return app
 
 
-def _add_circle_routes(app: FastAPI, circle: CircleClient, limit: RateLimiter, client_ip) -> None:
+def _add_circle_routes(app: FastAPI, circle: CircleClient, limit: RateLimiter, client_ip, unsafe: set[str]) -> None:
     def call(request: Request, fn, *args):
         if not limit.allow(client_ip(request)):
             raise HTTPException(429, "too many requests")
@@ -158,3 +167,12 @@ def _add_circle_routes(app: FastAPI, circle: CircleClient, limit: RateLimiter, c
             return {"challengeId": challenge_id, "address": None}
         addresses = call(request, circle.wallet_addresses, body.userToken)
         return {"challengeId": None, "address": addresses[0] if addresses else None}
+
+    @app.post("/circle/transfer")
+    def transfer(body: TransferRequest, request: Request):
+        if body.destinationAddress.lower() in unsafe:
+            raise HTTPException(400, "that address can't receive transfers; money sent there would be lost")
+        if Decimal(body.amount) <= 0:
+            raise HTTPException(400, "amount must be more than zero")
+        challenge_id = call(request, circle.create_transfer, body.userToken, body.destinationAddress, body.amount)
+        return {"challengeId": challenge_id}
