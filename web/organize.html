@@ -14,13 +14,29 @@
         <p class="muted">Turn USDC into links and QR codes. Anyone with a code can claim it with just a phone.</p>
       </div>
 
+      <section class="card stack" id="resume-card" hidden>
+        <div class="alert warn"><strong>You have drops waiting for an exchange deposit.</strong> <span id="resume-summary"></span></div>
+        <div class="row">
+          <button class="btn primary" id="resume">Continue that deposit</button>
+          <button class="btn ghost" id="discard">Discard</button>
+        </div>
+      </section>
+
       <section class="card stack" id="wallet-card">
         <div class="row between">
-          <h2>Your wallet</h2>
+          <h2>How will you pay?</h2>
           <span class="badge plain" id="network"></span>
         </div>
-        <p class="muted small">Connect the wallet holding the USDC you'll give away. It needs a few extra cents for network fees.</p>
-        <button class="btn primary" id="connect">Connect wallet</button>
+        <div class="grid grid-2" id="pay-choice">
+          <div class="stack">
+            <button class="btn primary" id="connect">Connect wallet</button>
+            <p class="muted small">MetaMask, Rabby or another browser wallet holding USDC on <span class="network-name"></span>.</p>
+          </div>
+          <div class="stack">
+            <button class="btn" id="use-exchange">Fund from an exchange</button>
+            <p class="muted small">Your USDC is on Kraken, KuCoin or another exchange? Withdraw it to a deposit address we give you.</p>
+          </div>
+        </div>
         <p class="muted small" id="wallet-status"></p>
       </section>
 
@@ -32,17 +48,42 @@
           <label>Claim before <input id="expires" type="datetime-local" required /><span class="hint">After this, unclaimed drops can only be refunded</span></label>
           <label>Max network fee per claim <input id="fee-cap" inputmode="decimal" value="0.05" required /><span class="hint">Comes out of each drop; at most $0.10</span></label>
           <button class="btn primary span" type="submit">Create links</button>
+          <p class="error small span" id="form-error"></p>
         </form>
       </section>
 
       <section class="card stack" id="backup-card" hidden>
         <div class="row"><span class="step-num">2</span><h2>Save your backup</h2></div>
-        <div class="alert warn">Your <strong id="backup-count"></strong> links were made on this device and exist nowhere else. Download the backup before funding, and keep it private: anyone with a link can claim it.</div>
+        <div class="alert warn">Your <strong id="backup-count"></strong> links were made on this device and exist nowhere else. Download the backup before funding, and keep it private: anyone with a link can claim it.
+          <span id="backup-extra" hidden><br /><br />It also holds the key to your <strong>funding wallet</strong>. You'll need this file to refund unclaimed drops or send money back to your exchange.</span></div>
         <button class="btn" id="download-backup">Download backup (CSV)</button>
-        <div class="row mt"><span class="step-num">3</span><h2>Fund the drops</h2></div>
-        <p id="fund-summary"></p>
-        <button class="btn primary" id="fund" disabled>Fund drops</button>
-        <p class="muted small" id="fund-status"></p>
+        <div class="stack" id="fund-step">
+          <div class="row mt"><span class="step-num">3</span><h2>Fund the drops</h2></div>
+          <p id="fund-summary"></p>
+          <button class="btn primary" id="fund" disabled>Fund drops</button>
+          <p class="muted small" id="fund-status"></p>
+        </div>
+      </section>
+
+      <section class="card stack" id="deposit-card" hidden>
+        <div class="row"><span class="step-num">3</span><h2>Withdraw from your exchange</h2></div>
+        <div class="grid" style="grid-template-columns: auto 1fr; gap: 20px; align-items: start">
+          <img id="deposit-qr" alt="QR code of the deposit address" width="160" height="160" style="border-radius: 12px; background: #fff; padding: 6px" />
+          <div class="stack">
+            <table class="stats">
+              <tr><th>Network</th><td><strong class="network-name"></strong></td></tr>
+              <tr><th>Asset</th><td><strong>USDC</strong></td></tr>
+              <tr><th>Amount to arrive</th><td><strong id="deposit-amount"></strong> or more</td></tr>
+            </table>
+            <label>Deposit address
+              <div class="row tight"><code id="deposit-address" style="padding: 10px 12px; background: var(--surface-2); border-radius: 10px; flex: 1"></code>
+              <button class="btn small" id="copy-address" type="button">Copy</button></div>
+            </label>
+          </div>
+        </div>
+        <div class="alert">Choose <strong>Arc</strong> as the withdrawal network. If your exchange takes its fee from the amount, add the fee on top so the full amount arrives. The few cents above your drops pay the network fees; anything unused can be sent back to you later.</div>
+        <div class="progress" aria-hidden="true"><span class="p-claimed" id="deposit-progress" style="width: 0%"></span></div>
+        <p class="small" id="deposit-status" aria-live="polite"></p>
       </section>
 
       <section class="card stack" id="sheet-card" hidden>
@@ -53,6 +94,7 @@
           <button class="btn" id="download-again">Download links (CSV)</button>
           <a class="btn ghost" id="track" href="/dashboard.html">Track in dashboard →</a>
         </div>
+        <p class="muted small" id="leftover" hidden></p>
       </section>
 
       <p class="muted small center">Need to pause a campaign or refund unclaimed drops? Use the <a href="/dashboard.html">dashboard</a>.</p>

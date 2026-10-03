@@ -24,6 +24,7 @@ from web3 import Web3
 
 from dollardrop.arc import ARC_USDC, usdc
 from dollardrop.compile import compile_all
+from dollardrop.indexer import Index, Indexer
 from dollardrop.relayer.app import create_app
 from dollardrop.relayer.core import Relayer
 
@@ -129,7 +130,14 @@ web config    {env_path.relative_to(ROOT)}
 
 next: cd web && npm run dev     then open http://localhost:5173/organize.html
 """)
-        app = create_app(Relayer(w3, dd, relayer_acct), cors_origins=["http://localhost:5173", "http://127.0.0.1:5173"])
+        indexer = Indexer(w3, dd, Index(), from_block=block)  # in memory: the local chain is throwaway too
+        indexer.start_background(interval=2)
+        app = create_app(
+            Relayer(w3, dd, relayer_acct),
+            cors_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+            indexer=indexer,
+            admin_token="local-admin",  # operator dashboard on the local stack
+        )
         uvicorn.run(app, host="127.0.0.1", port=args.relayer_port, log_level="warning")
     finally:
         anvil.terminate()

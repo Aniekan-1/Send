@@ -5,11 +5,13 @@
 import { type Address, getAddress, isAddress } from "viem";
 import { type Campaign, type DropRow, type Overview, dashboardApi } from "./api";
 import { columnChart, chartTable } from "./charts";
-import { type Connection, connectWallet, ensureArc } from "./connect";
+import { fundingKeyFromCsv } from "./backup";
+import { type Connection, connectWallet, connectWithKey, ensureArc, sendUsdc, usdcBalance } from "./connect";
 import { publicClient, requireContract, txLink } from "./config";
 import { ago, count, dateTime, plural, shortAddress, shortDay, usd, usdCompact } from "./format";
 import { dollarDropAbi } from "./generated/abi";
 import { renderNav } from "./nav";
+import { parseUnits } from "viem";
 import { $, errorMessage, html, raw } from "./ui";
 
 renderNav();
@@ -106,6 +108,8 @@ async function renderOrganizer() {
         <h2>Your campaigns</h2>
         <p class="muted">Connect the wallet you created drops with to see their progress, pause them, or refund unclaimed money.</p>
         <button class="btn primary" data-act="connect">Connect wallet</button>
+        <label class="btn" style="display:flex">Open with backup file (exchange-funded)
+          <input type="file" id="backup-file" accept=".csv,text/csv" hidden /></label>
         <div class="divider"><span>or look up any organizer (read only)</span></div>
         <form class="row tight" id="lookup">
           <input id="lookup-address" placeholder="0x… wallet address" autocomplete="off" spellcheck="false" />
@@ -123,6 +127,20 @@ async function renderOrganizer() {
         err.textContent = errorMessage(e);
         err.hidden = false;
       }
+    });
+    $<HTMLInputElement>("#backup-file", host).addEventListener("change", async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      const key = fundingKeyFromCsv(await file.text());
+      if (!key) {
+        const err = $("#org-error", host);
+        err.textContent = "That file has no funding wallet. It's only in backups of campaigns funded from an exchange; for the others, connect the wallet you used.";
+        err.hidden = false;
+        return;
+      }
+      connection = connectWithKey(key);
+      viewing = connection.account;
+      await renderOrganizer();
     });
     $("#lookup", host).addEventListener("submit", (e) => {
       e.preventDefault();
@@ -149,14 +167,16 @@ async function renderOrganizer() {
       { sent: 0, claimed: 0, drops: 0, locked: 0 },
     );
     const mine = connection?.account === viewing;
+    const fundingBalance = connection?.local && mine ? await usdcBalance(connection.account) : null;
     host.innerHTML = html`
       <div class="row between">
-        <p class="muted small">${mine ? "Connected as" : "Viewing"} <code>${shortAddress(viewing!)}</code></p>
+        <p class="muted small">${mine ? (connection?.local ? "Funding wallet" : "Connected as") : "Viewing"} <code>${shortAddress(viewing!)}</code></p>
         <div class="row">
           <a class="btn primary small" href="/organize.html">New campaign</a>
           <button class="btn ghost small" data-act="switch">${mine ? "Disconnect" : "Change"}</button>
         </div>
       </div>
+      ${raw(fundingBalance === null ? "" : fundingCard(fundingBalance))}
       <div class="grid grid-4">
         <div class="card tile"><span class="label">Sent to recipients</span><span class="value">${usdCompact(totals.sent)}</span></div>
         <div class="card tile"><span class="label">Drops claimed</span><span class="value">${count(totals.claimed)}<span class="muted small"> / ${count(totals.drops)}</span></span></div>
@@ -174,6 +194,7 @@ async function renderOrganizer() {
       renderOrganizer();
     });
     wireCampaignLinks(host);
+    if (fundingBalance !== null) wireFundingCard(host, fundingBalance, load);
   };
   try {
     await load();
@@ -181,6 +202,52 @@ async function renderOrganizer() {
   } catch (e) {
     problem(host, e);
   }
+}
+
+const FEE_RESERVE = parseUnits("0.01", 6); // left behind so the transfer can pay its own network fee
+
+function fundingCard(balance: bigint): string {
+  return html`<div class="card stack">
+    <div class="row between"><h2>Funding wallet</h2><span class="value" style="font-size:1.5rem;font-weight:700">${usd(balance)}</span></div>
+    <p class="muted small">Refunds and unused fee money land here. Send it back to your exchange: use your exchange's USDC deposit address on the <strong>Arc</strong> network.</p>
+    <form class="grid-form" id="withdraw-form">
+      <label>To (exchange deposit address)<input id="withdraw-to" placeholder="0x…" autocomplete="off" spellcheck="false" required /></label>
+      <label>Amount (USD)<div class="row tight"><input id="withdraw-amount" inputmode="decimal" required /><button class="btn small" type="button" data-act="max">Max</button></div></label>
+      <button class="btn primary span" type="submit" ${balance > FEE_RESERVE ? "" : "disabled"}>Send</button>
+      <p class="small span" id="withdraw-status" aria-live="polite"></p>
+    </form>
+  </div>`;
+}
+
+function wireFundingCard(host: HTMLElement, balance: bigint, reload: () => Promise<void>) {
+  const status = $("#withdraw-status", host);
+  $("[data-act=max]", host).addEventListener("click", () => {
+    $<HTMLInputElement>("#withdraw-amount", host).value = balance > FEE_RESERVE ? (Number(balance - FEE_RESERVE) / 1e6).toFixed(6).replace(/\.?0+$/, "") : "0";
+  });
+  $("#withdraw-form", host).addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const to = $<HTMLInputElement>("#withdraw-to", host).value.trim();
+    const text = $<HTMLInputElement>("#withdraw-amount", host).value.trim().replace(/^\$/, "");
+    status.className = "small span error";
+    if (!isAddress(to)) return void (status.textContent = "That doesn't look like an Arc address (it starts with 0x).");
+    if (!/^\d+(\.\d{1,6})?$/.test(text)) return void (status.textContent = "Enter an amount like 5 or 5.25.");
+    const amount = parseUnits(text, 6);
+    if (amount <= 0n || amount + FEE_RESERVE > balance) return void (status.textContent = `You can send up to ${usd(balance > FEE_RESERVE ? balance - FEE_RESERVE : 0n)}.`);
+    if (!confirm(`Send ${usd(amount)} to ${to}?
+
+Make sure it's a USDC deposit address on the Arc network. Payments can't be reversed.`)) return;
+    status.className = "small span muted";
+    status.textContent = "Sending…";
+    try {
+      await sendUsdc(connection!, getAddress(to), amount);
+      await reload();
+      $("#withdraw-status", host).className = "small span ok";
+      $("#withdraw-status", host).textContent = `Sent ${usd(amount)}.`;
+    } catch (err) {
+      status.className = "small span error";
+      status.textContent = errorMessage(err);
+    }
+  });
 }
 
 // ------------------------------------------------------------------ operator tab
@@ -406,7 +473,7 @@ async function send(functionName: "setPaused" | "refund", args: readonly unknown
   if (!connection) throw new Error("Connect your wallet first.");
   await ensureArc(connection.wallet);
   const { request } = await publicClient.simulateContract({
-    account: connection.account, address: requireContract(), abi: dollarDropAbi,
+    account: connection.signer, address: requireContract(), abi: dollarDropAbi,
     functionName, args: args as never,
   });
   const hash = await connection.wallet.writeContract(request);

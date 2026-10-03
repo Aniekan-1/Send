@@ -3,11 +3,19 @@
 // Claim keys are generated here, in the organizer's browser. Only their addresses go on-chain.
 // The organizer must download the backup before funding: without the links, drops can't be
 // claimed (though they can still be found via DropCreated events and refunded).
-import { type Address, type Hex, type WalletClient, erc20Abi, parseEventLogs } from "viem";
+//
+// Two ways to pay:
+// - Browser wallet (MetaMask, …): approve + createCampaign, signed in the wallet.
+// - From an exchange: we make a one-time funding wallet here and show its address. The organizer
+//   withdraws USDC to it from their exchange; once it lands, this page funds the drops itself,
+//   paying gas from that same USDC. Only on Arc can a wallet holding nothing but USDC do that.
+//   Its key goes in the backup file; the dashboard uses it later to refund and withdraw.
+import { type Hex, erc20Abi, parseEventLogs } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import QRCode from "qrcode";
+import { backupCsv, downloadText } from "./backup";
 import { USDC, arc, publicClient, requireContract } from "./config";
-import { connectWallet, ensureArc, usdcBalance } from "./connect";
+import { type Connection, connectWallet, connectWithKey, ensureArc, usdcBalance } from "./connect";
 import { usd, parseUsd } from "./format";
 import { dollarDropAbi } from "./generated/abi";
 import { claimLink, newClaimSecret } from "./links";
@@ -19,9 +27,10 @@ renderNav();
 const MAX_DROP = 50_000_000n;
 const MAX_FEE_CAP = 100_000n;
 const MAX_PER_CALL = 200;
+const PENDING = "dd:pending-exchange-campaign";
+const POLL_MS = 4000;
 
-let wallet: WalletClient;
-let account: Address;
+type Mode = "wallet" | "exchange";
 
 interface Plan {
   amount: bigint;
@@ -30,25 +39,40 @@ interface Plan {
   feeCap: bigint;
   secrets: Hex[];
   links: string[];
+  fundingKey?: Hex; // exchange mode only
   funded?: boolean;
 }
+
+let mode: Mode = "wallet";
+let connection: Connection | undefined;
 let plan: Plan | undefined;
+let poll: number | undefined;
 
 const siteUrl = () => location.origin + location.pathname.replace(/[^/]*$/, "");
+const total = (p: Plan) => p.amount * BigInt(p.count);
 
-// ------------------------------------------------------------------ wallet
+// ------------------------------------------------------------------ choose how to pay
 
 async function connect() {
-  ({ wallet, account } = await connectWallet());
-  const balance = await usdcBalance(account);
-  $("#wallet-status").textContent = `Connected ${account} · ${usd(balance)} USDC on ${arc.name}`;
-  $("#connect").hidden = true;
+  connection = await connectWallet();
+  mode = "wallet";
+  const balance = await usdcBalance(connection.account);
+  $("#wallet-status").textContent = `Connected ${connection.account} · ${usd(balance)} USDC on ${arc.name}`;
+  $("#pay-choice").hidden = true;
+  $("#create-card").hidden = false;
+}
+
+function chooseExchange() {
+  mode = "exchange";
+  $("#wallet-status").textContent =
+    "You'll get a deposit address after setting up your drops. Withdraw USDC to it from your exchange, on the Arc network.";
+  $("#pay-choice").hidden = true;
   $("#create-card").hidden = false;
 }
 
 // ------------------------------------------------------------------ create
 
-function readForm(): Omit<Plan, "secrets" | "links"> {
+function readForm(): Pick<Plan, "amount" | "count" | "expiresAt" | "feeCap"> {
   const amount = parseUsd($<HTMLInputElement>("#amount").value);
   const count = Number($<HTMLInputElement>("#count").value);
   const feeCap = parseUsd($<HTMLInputElement>("#fee-cap").value);
@@ -66,88 +90,177 @@ function readForm(): Omit<Plan, "secrets" | "links"> {
 function createLinks() {
   const base = readForm();
   const secrets = Array.from({ length: base.count }, newClaimSecret);
-  plan = { ...base, secrets, links: secrets.map((s) => claimLink(siteUrl(), s)) };
+  plan = {
+    ...base,
+    secrets,
+    links: secrets.map((s) => claimLink(siteUrl(), s)),
+    fundingKey: mode === "exchange" ? newClaimSecret() : undefined,
+  };
 
   $("#backup-count").textContent = String(plan.count);
-  $("#fund-summary").textContent =
-    `${plan.count} drops × ${usd(plan.amount)} = ${usd(plan.amount * BigInt(plan.count))}, plus network fees for 2 transactions.`;
+  $("#backup-extra").hidden = mode !== "exchange";
+  $("#fund-summary").textContent = `${plan.count} drops × ${usd(plan.amount)} = ${usd(total(plan))}, plus a few cents of network fees.`;
+  $("#fund-step").hidden = mode !== "wallet";
   $<HTMLButtonElement>("#fund").disabled = true;
   $("#fund-status").textContent = "Download the backup to continue.";
   $("#backup-card").hidden = false;
+  $("#create-card").querySelector<HTMLButtonElement>("button[type=submit]")!.disabled = true;
   $("#backup-card").scrollIntoView({ behavior: "smooth" });
 }
 
-function downloadCsv(campaignId?: bigint) {
+function downloadBackup(campaignId?: bigint) {
   if (!plan) return;
-  const rows = [["drop", "amount_usd", "claim_key", "link"]];
-  plan.secrets.forEach((s, i) => {
-    rows.push([String(i + 1), usd(plan!.amount).slice(1), privateKeyToAccount(s).address, plan!.links[i]]);
-  });
-  const blob = new Blob([rows.map((r) => r.join(",")).join("\n") + "\n"], { type: "text/csv" });
-  const a = Object.assign(document.createElement("a"), {
-    href: URL.createObjectURL(blob),
-    download: `dollar-drop-${campaignId ?? "backup"}-${new Date().toISOString().slice(0, 10)}.csv`,
-  });
-  a.click();
-  URL.revokeObjectURL(a.href);
+  const csv = backupCsv({ amountUsd: usd(plan.amount).slice(1), secrets: plan.secrets, links: plan.links, fundingKey: plan.fundingKey });
+  downloadText(`dollar-drop-${campaignId ?? "backup"}-${new Date().toISOString().slice(0, 10)}.csv`, csv);
 }
 
-// ------------------------------------------------------------------ fund
-
-async function fund() {
+function afterBackup() {
   if (!plan) return;
-  const contract = requireContract();
-  const status = $("#fund-status");
-  const total = plan.amount * BigInt(plan.count);
-  await ensureArc(wallet);
+  if (mode === "wallet") {
+    $<HTMLButtonElement>("#fund").disabled = false;
+    $("#fund-status").textContent = "";
+  } else {
+    savePending(plan);
+    showDeposit(plan);
+  }
+}
 
-  const balance = await usdcBalance(account);
-  if (balance < total) throw new Error(`You need ${usd(total)} but have ${usd(balance)}.`);
+// ------------------------------------------------------------------ fund (shared by both modes)
+
+async function fund(c: Connection, p: Plan, status: HTMLElement): Promise<bigint> {
+  const contract = requireContract();
+  const need = total(p);
+  await ensureArc(c.wallet);
+
+  const balance = await usdcBalance(c.account);
+  if (balance < need) throw new Error(`You need ${usd(need)} but have ${usd(balance)}.`);
 
   const allowance = await publicClient.readContract({
-    address: USDC, abi: erc20Abi, functionName: "allowance", args: [account, contract],
+    address: USDC, abi: erc20Abi, functionName: "allowance", args: [c.account, contract],
   });
-  if (allowance < total) {
-    status.textContent = "Step 1 of 2: approve Dollar Drop to use your USDC…";
-    const hash = await wallet.writeContract({
-      account, chain: arc, address: USDC, abi: erc20Abi, functionName: "approve", args: [contract, total],
+  if (allowance < need) {
+    status.textContent = "Step 1 of 2: approving Dollar Drop to use the USDC…";
+    const hash = await c.wallet.writeContract({
+      account: c.signer, chain: arc, address: USDC, abi: erc20Abi, functionName: "approve", args: [contract, need],
     });
     await publicClient.waitForTransactionReceipt({ hash });
   }
 
-  status.textContent = "Step 2 of 2: fund the drops…";
-  const keys = plan.secrets.map((s) => privateKeyToAccount(s).address);
+  status.textContent = "Step 2 of 2: funding the drops…";
+  const keys = p.secrets.map((s) => privateKeyToAccount(s).address);
   const { request } = await publicClient.simulateContract({
-    account, address: contract, abi: dollarDropAbi, functionName: "createCampaign",
-    args: [plan.amount, plan.expiresAt, plan.feeCap, keys],
+    account: c.signer, address: contract, abi: dollarDropAbi, functionName: "createCampaign",
+    args: [p.amount, p.expiresAt, p.feeCap, keys],
   });
-  const hash = await wallet.writeContract(request);
-  const receipt = await publicClient.waitForTransactionReceipt({ hash });
-  if (receipt.status !== "success") throw new Error("Funding failed. Your USDC was not spent.");
+  const receipt = await publicClient.waitForTransactionReceipt({ hash: await c.wallet.writeContract(request) });
+  if (receipt.status !== "success") throw new Error("Funding failed. The USDC was not spent.");
 
   const [created] = parseEventLogs({ abi: dollarDropAbi, eventName: "CampaignCreated", logs: receipt.logs });
-  const campaignId = created.args.campaignId;
-  plan.funded = true;
+  p.funded = true;
   status.textContent = "";
+  return created.args.campaignId;
+}
+
+async function fundFromWallet() {
+  if (!plan || !connection) return;
+  const campaignId = await fund(connection, plan, $("#fund-status"));
+  await showFunded(campaignId);
+}
+
+// ------------------------------------------------------------------ exchange deposit
+
+/** Fees for approve + createCampaign at a pessimistic gas price, with 50% headroom, rounded up to the cent. */
+async function feeBudget(drops: number): Promise<bigint> {
+  const gasPrice = await publicClient.getGasPrice();
+  const maxFee = gasPrice * 2n > 20_000_000_000n ? gasPrice * 2n : 20_000_000_000n;
+  const units = 60_000n + 160_000n + 26_000n * BigInt(drops); // measured: approve ~51k, create ~145k + 25.6k/drop
+  const native = (units * maxFee * 3n) / 2n; // 18 decimals
+  const usdcUnits = (native + 10n ** 12n - 1n) / 10n ** 12n;
+  return ((usdcUnits + 9_999n) / 10_000n) * 10_000n;
+}
+
+function savePending(p: Plan) {
+  const json = JSON.stringify(p, (_, v) => (typeof v === "bigint" ? `${v}n` : v));
+  localStorage.setItem(PENDING, json);
+}
+
+function loadPending(): Plan | null {
+  const raw = localStorage.getItem(PENDING);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw, (_, v) => (typeof v === "string" && /^\d+n$/.test(v) ? BigInt(v.slice(0, -1)) : v)) as Plan;
+  } catch {
+    return null;
+  }
+}
+
+async function showDeposit(p: Plan) {
+  const funder = connectWithKey(p.fundingKey!);
+  const need = total(p) + (await feeBudget(p.count));
+  const card = $("#deposit-card");
+  card.hidden = false;
+  $("#deposit-address").textContent = funder.account;
+  $("#deposit-amount").textContent = usd(need);
+  $("#deposit-qr").setAttribute("src", await QRCode.toDataURL(funder.account, { margin: 1, width: 240 }));
+  $("#copy-address").onclick = async () => {
+    await navigator.clipboard.writeText(funder.account);
+    $("#copy-address").textContent = "Copied";
+  };
+  card.scrollIntoView({ behavior: "smooth" });
+
+  let funding = false;
+  const check = async () => {
+    if (funding) return;
+    const have = await usdcBalance(funder.account);
+    const pct = Number((have * 100n) / need);
+    $("#deposit-progress").style.width = `${Math.min(100, pct)}%`;
+    $("#deposit-status").textContent = have === 0n
+      ? "Waiting for your deposit… This page checks every few seconds; keep it open."
+      : have < need
+        ? `${usd(have)} received. Send ${usd(need - have)} more to continue.`
+        : `${usd(have)} received. Funding your drops…`;
+    if (have < need) return;
+
+    funding = true;
+    window.clearInterval(poll);
+    try {
+      const campaignId = await fund(funder, p, $("#deposit-status"));
+      localStorage.removeItem(PENDING);
+      await showFunded(campaignId);
+      const leftover = await usdcBalance(funder.account);
+      if (leftover > 0n) {
+        $("#leftover").hidden = false;
+        $("#leftover").textContent =
+          `${usd(leftover)} of unused fee money stays in your funding wallet. You can send it back to your exchange from the dashboard using your backup file.`;
+      }
+    } catch (e) {
+      funding = false;
+      $("#deposit-status").textContent = `${errorMessage(e)} Retrying…`;
+      poll = window.setInterval(() => check().catch(console.error), POLL_MS);
+    }
+  };
+  window.clearInterval(poll);
+  poll = window.setInterval(() => check().catch(console.error), POLL_MS);
+  await check();
+}
+
+// ------------------------------------------------------------------ funded
+
+async function showFunded(campaignId: bigint) {
+  if (!plan) return;
+  $("#deposit-card").hidden = true;
   $("#campaign-id").textContent = `#${campaignId}`;
   $("#sheet-card").hidden = false;
   $("#sheet-card").scrollIntoView({ behavior: "smooth" });
-  $("#download-again").onclick = () => downloadCsv(campaignId);
+  $("#download-again").onclick = () => downloadBackup(campaignId);
   $<HTMLAnchorElement>("#track").href = `/dashboard.html#campaign-${campaignId}`;
-  await renderSheet(campaignId);
-}
-
-async function renderSheet(campaignId: bigint) {
-  if (!plan) return;
   const codes = await Promise.all(plan.links.map((l) => QRCode.toDataURL(l, { margin: 1, width: 360 })));
   $("#sheet").innerHTML = codes
-    .map(
-      (src, i) => html`
-        <figure class="ticket">
-          <img src="${src}" alt="QR code for drop ${i + 1}" />
-          <figcaption><strong>${usd(plan!.amount)}</strong><span>Scan to claim · #${campaignId}-${i + 1}</span></figcaption>
-        </figure>`,
-    )
+    .map((src, i) => html`
+      <figure class="ticket">
+        <img src="${src}" alt="QR code for drop ${i + 1}" />
+        <figcaption><strong>${usd(plan!.amount)}</strong><span>Scan to claim · #${campaignId}-${i + 1}</span></figcaption>
+      </figure>`)
     .join("");
 }
 
@@ -172,19 +285,43 @@ function defaultExpiry() {
 
 $<HTMLInputElement>("#expires").value = defaultExpiry();
 $("#network").textContent = arc.name;
+document.querySelectorAll(".network-name").forEach((el) => (el.textContent = arc.name));
 $("#connect").onclick = () => act(connect, $("#wallet-status"));
+$("#use-exchange").onclick = chooseExchange;
 $("#create-form").onsubmit = (e) => {
   e.preventDefault();
-  act(async () => createLinks());
+  act(async () => createLinks(), $("#form-error"));
 };
 $("#download-backup").onclick = () => {
-  downloadCsv();
-  $<HTMLButtonElement>("#fund").disabled = false;
-  $("#fund-status").textContent = "";
+  downloadBackup();
+  afterBackup();
 };
 $("#fund").onclick = () => {
   const btn = $<HTMLButtonElement>("#fund");
   btn.disabled = true;
-  act(fund, $("#fund-status")).finally(() => (btn.disabled = Boolean(plan?.funded)));
+  act(fundFromWallet, $("#fund-status")).finally(() => (btn.disabled = Boolean(plan?.funded)));
 };
 $("#print").onclick = () => window.print();
+
+// A deposit started earlier (tab closed, page reloaded): offer to pick it up again.
+const pending = loadPending();
+if (pending?.fundingKey) {
+  $("#resume-card").hidden = false;
+  $("#resume-summary").textContent = `${pending.count} drops × ${usd(pending.amount)}, waiting for a deposit to ${privateKeyToAccount(pending.fundingKey).address}.`;
+  $("#resume").onclick = () => {
+    plan = pending;
+    mode = "exchange";
+    $("#resume-card").hidden = true;
+    $("#pay-choice").hidden = true;
+    act(() => showDeposit(pending));
+  };
+  $("#discard").onclick = async () => {
+    const held = await usdcBalance(privateKeyToAccount(pending.fundingKey!).address).catch(() => 0n);
+    const warning = held > 0n
+      ? `That funding wallet already holds ${usd(held)}. Only discard if you have the backup file: you'll need it to get the money back (Dashboard → Open with backup file). Discard?`
+      : "Discard this unfunded campaign?";
+    if (!confirm(warning)) return;
+    localStorage.removeItem(PENDING);
+    $("#resume-card").hidden = true;
+  };
+}
