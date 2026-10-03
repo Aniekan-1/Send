@@ -16,10 +16,12 @@
 
       <section class="card stack" id="resume-card" hidden>
         <div class="alert warn"><strong>You have drops waiting for an exchange deposit.</strong> <span id="resume-summary"></span></div>
-        <div class="row">
-          <button class="btn primary" id="resume">Continue that deposit</button>
-          <button class="btn ghost" id="discard">Discard</button>
-        </div>
+        <form class="row tight" id="resume-form">
+          <input id="resume-password" type="password" autocomplete="current-password" placeholder="Backup password" required />
+          <button class="btn primary" type="submit">Continue that deposit</button>
+        </form>
+        <p class="error small" id="resume-error"></p>
+        <button class="btn ghost small" id="discard" type="button">Discard</button>
       </section>
 
       <section class="card stack" id="wallet-card">
@@ -55,8 +57,13 @@
       <section class="card stack" id="backup-card" hidden>
         <div class="row"><span class="step-num">2</span><h2>Save your backup</h2></div>
         <div class="alert warn">Your <strong id="backup-count"></strong> links were made on this device and exist nowhere else. Download the backup before funding, and keep it private: anyone with a link can claim it.
-          <span id="backup-extra" hidden><br /><br />It also holds the key to your <strong>funding wallet</strong>. You'll need this file to refund unclaimed drops or send money back to your exchange.</span></div>
+          <span id="backup-extra" hidden><br /><br />It also holds the key to your <strong>funding wallet</strong>, locked with a password you choose below. You'll need the file and the password to refund unclaimed drops or send money back to your exchange.</span></div>
+        <div class="grid-form" id="backup-password-fields" hidden>
+          <label>Backup password <input id="backup-password" type="password" autocomplete="new-password" minlength="10" /><span class="hint">At least 10 characters. It locks the funding wallet key in the file.</span></label>
+          <label>Repeat password <input id="backup-password2" type="password" autocomplete="new-password" minlength="10" /><span class="hint">There is no "forgot password": without it, the file can't refund or withdraw.</span></label>
+        </div>
         <button class="btn" id="download-backup">Download backup (CSV)</button>
+        <p class="error small" id="backup-error"></p>
         <div class="stack" id="fund-step">
           <div class="row mt"><span class="step-num">3</span><h2>Fund the drops</h2></div>
           <p id="fund-summary"></p>
@@ -95,7 +102,7 @@
           <a class="btn ghost" id="track" href="/dashboard.html">Track in dashboard →</a>
         </div>
         <div class="alert warn" id="safe-backup" hidden>
-          <strong>Keep your backup file safe.</strong> It's in your Downloads folder, named <code>dollar-drop-…-KEEP-PRIVATE.csv</code>, and it's the only key to this campaign's money. Move a copy somewhere safe, such as a USB stick or a password manager. Don't email or share it: anyone with it can take back unclaimed money.
+          <strong>Keep your backup file safe.</strong> It's in your Downloads folder, named <code>dollar-drop-…-KEEP-PRIVATE.csv</code>, and it's the only key to this campaign's money. Move a copy somewhere safe, such as a USB stick or a password manager, and remember its password. Don't share the file: its links can be claimed by anyone who has them.
         </div>
         <p class="muted small" id="leftover" hidden></p>
       </section>

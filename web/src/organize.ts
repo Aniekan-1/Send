@@ -10,10 +10,11 @@
 //   withdraws USDC to it from their exchange; once it lands, this page funds the drops itself,
 //   paying gas from that same USDC. Only on Arc can a wallet holding nothing but USDC do that.
 //   Its key goes in the backup file; the dashboard uses it later to refund and withdraw.
-import { type Hex, erc20Abi, parseEventLogs } from "viem";
+import { type Address, type Hex, erc20Abi, parseEventLogs } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import QRCode from "qrcode";
 import { backupCsv, downloadText } from "./backup";
+import { MIN_PASSWORD, decryptKey, encryptKey } from "./vault";
 import { USDC, arc, publicClient, requireContract } from "./config";
 import { type Connection, connectWallet, connectWithKey, ensureArc, usdcBalance } from "./connect";
 import { usd, parseUsd } from "./format";
@@ -39,7 +40,9 @@ interface Plan {
   feeCap: bigint;
   secrets: Hex[];
   links: string[];
-  fundingKey?: Hex; // exchange mode only
+  fundingKey?: Hex; // exchange mode only; kept in memory, never stored in plain text
+  fundingAddress?: Address;
+  fundingSecret?: string; // the funding key encrypted with the organizer's password (enc:v1:…)
   funded?: boolean;
 }
 
@@ -96,9 +99,11 @@ function createLinks() {
     links: secrets.map((s) => claimLink(siteUrl(), s)),
     fundingKey: mode === "exchange" ? newClaimSecret() : undefined,
   };
+  if (plan.fundingKey) plan.fundingAddress = privateKeyToAccount(plan.fundingKey).address;
 
   $("#backup-count").textContent = String(plan.count);
   $("#backup-extra").hidden = mode !== "exchange";
+  $("#backup-password-fields").hidden = mode !== "exchange";
   $("#fund-summary").textContent = `${plan.count} drops × ${usd(plan.amount)} = ${usd(total(plan))}, plus a few cents of network fees.`;
   $("#fund-step").hidden = mode !== "wallet";
   $<HTMLButtonElement>("#fund").disabled = true;
@@ -108,9 +113,22 @@ function createLinks() {
   $("#backup-card").scrollIntoView({ behavior: "smooth" });
 }
 
+/** Exchange mode: encrypt the funding key with the organizer's password before it goes in any file. */
+async function protectFundingKey() {
+  if (!plan?.fundingKey || plan.fundingSecret) return;
+  const password = $<HTMLInputElement>("#backup-password").value;
+  if (password.length < MIN_PASSWORD) throw new Error(`Choose a password of at least ${MIN_PASSWORD} characters.`);
+  if (password !== $<HTMLInputElement>("#backup-password2").value) throw new Error("The two passwords don't match.");
+  $("#backup-error").textContent = "Protecting your backup…";
+  plan.fundingSecret = await encryptKey(plan.fundingKey, password);
+  $("#backup-error").textContent = "";
+  $("#backup-password-fields").hidden = true;
+}
+
 function downloadBackup(campaignId?: bigint) {
   if (!plan) return;
-  const csv = backupCsv({ amountUsd: usd(plan.amount).slice(1), secrets: plan.secrets, links: plan.links, fundingKey: plan.fundingKey });
+  const funding = plan.fundingAddress && plan.fundingSecret ? { address: plan.fundingAddress, secret: plan.fundingSecret } : undefined;
+  const csv = backupCsv({ amountUsd: usd(plan.amount).slice(1), secrets: plan.secrets, links: plan.links, funding });
   // Name it so it stands out in the Downloads folder and says it matters.
   const name = campaignId === undefined
     ? `dollar-drop-backup-${new Date().toISOString().slice(0, 10)}-KEEP-PRIVATE.csv`
@@ -184,7 +202,8 @@ async function feeBudget(drops: number): Promise<bigint> {
 }
 
 function savePending(p: Plan) {
-  const json = JSON.stringify(p, (_, v) => (typeof v === "bigint" ? `${v}n` : v));
+  // The funding key is stored only in its password-encrypted form.
+  const json = JSON.stringify({ ...p, fundingKey: undefined }, (_, v) => (typeof v === "bigint" ? `${v}n` : v));
   localStorage.setItem(PENDING, json);
 }
 
@@ -257,7 +276,7 @@ async function showFunded(campaignId: bigint) {
   $("#sheet-card").hidden = false;
   $("#sheet-card").scrollIntoView({ behavior: "smooth" });
   $("#download-again").onclick = () => downloadBackup(campaignId);
-  $("#safe-backup").hidden = !plan.fundingKey; // exchange-funded: the file is the only key to the money
+  $("#safe-backup").hidden = !plan.fundingSecret; // exchange-funded: the file is the only key to the money
   $<HTMLAnchorElement>("#track").href = `/dashboard.html#campaign-${campaignId}`;
   const codes = await Promise.all(plan.links.map((l) => QRCode.toDataURL(l, { margin: 1, width: 360 })));
   $("#sheet").innerHTML = codes
@@ -297,10 +316,12 @@ $("#create-form").onsubmit = (e) => {
   e.preventDefault();
   act(async () => createLinks(), $("#form-error"));
 };
-$("#download-backup").onclick = () => {
-  downloadBackup();
-  afterBackup();
-};
+$("#download-backup").onclick = () =>
+  act(async () => {
+    await protectFundingKey();
+    downloadBackup();
+    afterBackup();
+  }, $("#backup-error"));
 $("#fund").onclick = () => {
   const btn = $<HTMLButtonElement>("#fund");
   btn.disabled = true;
@@ -310,20 +331,24 @@ $("#print").onclick = () => window.print();
 
 // A deposit started earlier (tab closed, page reloaded): offer to pick it up again.
 const pending = loadPending();
-if (pending?.fundingKey) {
+if (pending?.fundingSecret && pending.fundingAddress) {
   $("#resume-card").hidden = false;
-  $("#resume-summary").textContent = `${pending.count} drops × ${usd(pending.amount)}, waiting for a deposit to ${privateKeyToAccount(pending.fundingKey).address}.`;
-  $("#resume").onclick = () => {
-    plan = pending;
-    mode = "exchange";
-    $("#resume-card").hidden = true;
-    $("#pay-choice").hidden = true;
-    act(() => showDeposit(pending));
+  $("#resume-summary").textContent = `${pending.count} drops × ${usd(pending.amount)}, waiting for a deposit to ${pending.fundingAddress}.`;
+  $("#resume-form").onsubmit = (e) => {
+    e.preventDefault();
+    act(async () => {
+      pending.fundingKey = await decryptKey(pending.fundingSecret!, $<HTMLInputElement>("#resume-password").value);
+      plan = pending;
+      mode = "exchange";
+      $("#resume-card").hidden = true;
+      $("#pay-choice").hidden = true;
+      await showDeposit(pending);
+    }, $("#resume-error"));
   };
   $("#discard").onclick = async () => {
-    const held = await usdcBalance(privateKeyToAccount(pending.fundingKey!).address).catch(() => 0n);
+    const held = await usdcBalance(pending.fundingAddress!).catch(() => 0n);
     const warning = held > 0n
-      ? `That funding wallet already holds ${usd(held)}. Only discard if you have the backup file: you'll need it to get the money back (Dashboard → Open with my backup file). Discard?`
+      ? `That funding wallet already holds ${usd(held)}. Only discard if you have the backup file and its password: you'll need them to get the money back (Dashboard → Open with my backup file). Discard?`
       : "Discard this unfunded campaign?";
     if (!confirm(warning)) return;
     localStorage.removeItem(PENDING);

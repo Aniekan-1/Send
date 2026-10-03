@@ -5,7 +5,7 @@
 import { type Address, getAddress, isAddress } from "viem";
 import { type Campaign, type DropRow, type Overview, dashboardApi } from "./api";
 import { columnChart, chartTable } from "./charts";
-import { fundingKeyFromCsv } from "./backup";
+import { fundingEntry, unlockFunding } from "./backup";
 import { type Connection, connectWallet, connectWithKey, ensureArc, sendUsdc, usdcBalance } from "./connect";
 import { publicClient, requireContract, txLink } from "./config";
 import { ago, count, dateTime, plural, shortAddress, shortDay, usd, usdCompact } from "./format";
@@ -111,6 +111,10 @@ async function renderOrganizer() {
         <label class="btn" style="display:flex">Open with my backup file
           <input type="file" id="backup-file" accept=".csv,text/csv" hidden /></label>
         <p class="muted small">Funded your drops from an exchange? Choose the backup file you downloaded when you created them; look in your Downloads folder for a file starting with <code>dollar-drop-</code>. It's read only in this browser, never uploaded, and lets you refund unclaimed drops and send money back to your exchange.</p>
+        <form class="row tight" id="backup-unlock" hidden>
+          <input id="backup-unlock-password" type="password" autocomplete="current-password" placeholder="Backup password" required />
+          <button class="btn primary" type="submit">Unlock</button>
+        </form>
         <div class="divider"><span>or look up any organizer (read only)</span></div>
         <form class="row tight" id="lookup">
           <input id="lookup-address" placeholder="0x… wallet address" autocomplete="off" spellcheck="false" />
@@ -129,19 +133,36 @@ async function renderOrganizer() {
         err.hidden = false;
       }
     });
-    $<HTMLInputElement>("#backup-file", host).addEventListener("change", async (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) return;
-      const key = fundingKeyFromCsv(await file.text());
-      if (!key) {
-        const err = $("#org-error", host);
-        err.textContent = "That file has no funding wallet. It's only in backups of campaigns funded from an exchange; for the others, connect the wallet you used.";
-        err.hidden = false;
-        return;
-      }
+    const showError = (message: string) => {
+      const err = $("#org-error", host);
+      err.textContent = message;
+      err.hidden = false;
+    };
+    const open = async (key: `0x${string}`) => {
       connection = connectWithKey(key);
       viewing = connection.account;
       await renderOrganizer();
+    };
+    $<HTMLInputElement>("#backup-file", host).addEventListener("change", async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      const entry = fundingEntry(await file.text());
+      if (!entry) {
+        return showError("That file has no funding wallet. It's only in backups of campaigns funded from an exchange; for the others, connect the wallet you used.");
+      }
+      $("#org-error", host).hidden = true;
+      if (!entry.encrypted) return open(await unlockFunding(entry)); // older, unprotected backups
+      const form = $("#backup-unlock", host);
+      form.hidden = false;
+      $<HTMLInputElement>("#backup-unlock-password", host).focus();
+      form.onsubmit = async (ev) => {
+        ev.preventDefault();
+        try {
+          await open(await unlockFunding(entry, $<HTMLInputElement>("#backup-unlock-password", host).value));
+        } catch (err) {
+          showError(errorMessage(err));
+        }
+      };
     });
     $("#lookup", host).addEventListener("submit", (e) => {
       e.preventDefault();
