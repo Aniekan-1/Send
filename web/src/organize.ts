@@ -1,29 +1,24 @@
-// Organizer page: create, fund, print and manage drops.
+// Organizer page: create, fund and print drops. Tracking, pausing and refunds live in the dashboard.
 //
 // Claim keys are generated here, in the organizer's browser. Only their addresses go on-chain.
 // The organizer must download the backup before funding: without the links, drops can't be
 // claimed (though they can still be found via DropCreated events and refunded).
-import {
-  type Address,
-  type Hex,
-  type WalletClient,
-  createWalletClient,
-  custom,
-  erc20Abi,
-  parseEventLogs,
-} from "viem";
+import { type Address, type Hex, type WalletClient, erc20Abi, parseEventLogs } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import QRCode from "qrcode";
-import { USDC, arc, config, publicClient, requireContract } from "./config";
+import { USDC, arc, publicClient, requireContract } from "./config";
+import { connectWallet, ensureArc, usdcBalance } from "./connect";
 import { usd, parseUsd } from "./format";
 import { dollarDropAbi } from "./generated/abi";
 import { claimLink, newClaimSecret } from "./links";
+import { renderNav } from "./nav";
 import { $, errorMessage, html } from "./ui";
+
+renderNav();
 
 const MAX_DROP = 50_000_000n;
 const MAX_FEE_CAP = 100_000n;
 const MAX_PER_CALL = 200;
-const STATUS = ["none", "active", "claimed", "refunded"] as const;
 
 let wallet: WalletClient;
 let account: Address;
@@ -44,26 +39,11 @@ const siteUrl = () => location.origin + location.pathname.replace(/[^/]*$/, "");
 // ------------------------------------------------------------------ wallet
 
 async function connect() {
-  if (!window.ethereum) throw new Error("No browser wallet found. Install MetaMask or a similar wallet, then reload.");
-  wallet = createWalletClient({ chain: arc, transport: custom(window.ethereum) });
-  [account] = await wallet.requestAddresses();
-  await ensureArc();
-
-  const balance = await publicClient.readContract({ address: USDC, abi: erc20Abi, functionName: "balanceOf", args: [account] });
+  ({ wallet, account } = await connectWallet());
+  const balance = await usdcBalance(account);
   $("#wallet-status").textContent = `Connected ${account} · ${usd(balance)} USDC on ${arc.name}`;
   $("#connect").hidden = true;
   $("#create-card").hidden = false;
-  $("#manage-card").hidden = false;
-}
-
-async function ensureArc() {
-  if ((await wallet.getChainId()) === arc.id) return;
-  try {
-    await wallet.switchChain({ id: arc.id });
-  } catch {
-    await wallet.addChain({ chain: arc });
-    await wallet.switchChain({ id: arc.id });
-  }
 }
 
 // ------------------------------------------------------------------ create
@@ -119,9 +99,9 @@ async function fund() {
   const contract = requireContract();
   const status = $("#fund-status");
   const total = plan.amount * BigInt(plan.count);
-  await ensureArc();
+  await ensureArc(wallet);
 
-  const balance = await publicClient.readContract({ address: USDC, abi: erc20Abi, functionName: "balanceOf", args: [account] });
+  const balance = await usdcBalance(account);
   if (balance < total) throw new Error(`You need ${usd(total)} but have ${usd(balance)}.`);
 
   const allowance = await publicClient.readContract({
@@ -153,6 +133,7 @@ async function fund() {
   $("#sheet-card").hidden = false;
   $("#sheet-card").scrollIntoView({ behavior: "smooth" });
   $("#download-again").onclick = () => downloadCsv(campaignId);
+  $<HTMLAnchorElement>("#track").href = `/dashboard.html#campaign-${campaignId}`;
   await renderSheet(campaignId);
 }
 
@@ -168,80 +149,6 @@ async function renderSheet(campaignId: bigint) {
         </figure>`,
     )
     .join("");
-}
-
-// ------------------------------------------------------------------ manage
-
-async function lookUp(campaignId: bigint) {
-  const contract = requireContract();
-  const out = $("#manage-out");
-  out.textContent = "Loading…";
-
-  const [owner, amount, expiresAt, , paused] = await publicClient.readContract({
-    address: contract, abi: dollarDropAbi, functionName: "campaigns", args: [campaignId],
-  });
-  if (owner === "0x0000000000000000000000000000000000000000") throw new Error("No campaign with that number.");
-
-  const logs = await publicClient.getContractEvents({
-    address: contract, abi: dollarDropAbi, eventName: "DropCreated",
-    args: { campaignId }, fromBlock: config.deployBlock, toBlock: "latest",
-  });
-  const keys = logs.map((l) => l.args.claimKey!);
-  const drops = await Promise.all(
-    keys.map((k) => publicClient.readContract({ address: contract, abi: dollarDropAbi, functionName: "getDrop", args: [k] })),
-  );
-  const counts = { active: 0, claimed: 0, refunded: 0 };
-  const unclaimed: Address[] = [];
-  drops.forEach((d, i) => {
-    const s = STATUS[d[1]];
-    if (s !== "none") counts[s]++;
-    if (s === "active") unclaimed.push(keys[i]);
-  });
-  const isOwner = owner.toLowerCase() === account.toLowerCase();
-
-  out.innerHTML = html`
-    <table class="stats">
-      <tr><th>Drop size</th><td>${usd(amount)}</td></tr>
-      <tr><th>Claimed</th><td>${counts.claimed} of ${keys.length}</td></tr>
-      <tr><th>Unclaimed</th><td>${counts.active} (${usd(amount * BigInt(counts.active))})</td></tr>
-      <tr><th>Refunded</th><td>${counts.refunded}</td></tr>
-      <tr><th>Claim deadline</th><td>${new Date(Number(expiresAt) * 1000).toLocaleString()}</td></tr>
-      <tr><th>Status</th><td>${paused ? "Paused" : "Open"}</td></tr>
-    </table>
-    ${isOwner ? "" : "Only the wallet that created this campaign can change it."}`;
-
-  if (!isOwner) return;
-  const row = document.createElement("div");
-  row.className = "row";
-  const pause = Object.assign(document.createElement("button"), {
-    className: "btn", textContent: paused ? "Resume claims" : "Pause claims",
-  });
-  pause.onclick = () => act(async () => {
-    const { request } = await publicClient.simulateContract({
-      account, address: contract, abi: dollarDropAbi, functionName: "setPaused", args: [campaignId, !paused],
-    });
-    await publicClient.waitForTransactionReceipt({ hash: await wallet.writeContract(request) });
-    await lookUp(campaignId);
-  });
-  row.append(pause);
-
-  if (unclaimed.length) {
-    const refund = Object.assign(document.createElement("button"), {
-      className: "btn danger", textContent: `Refund ${unclaimed.length} unclaimed (${usd(amount * BigInt(unclaimed.length))})`,
-    });
-    refund.onclick = () => act(async () => {
-      if (!confirm("Refund every unclaimed drop? Their links will stop working.")) return;
-      for (let i = 0; i < unclaimed.length; i += MAX_PER_CALL) {
-        const { request } = await publicClient.simulateContract({
-          account, address: contract, abi: dollarDropAbi, functionName: "refund", args: [unclaimed.slice(i, i + MAX_PER_CALL)],
-        });
-        await publicClient.waitForTransactionReceipt({ hash: await wallet.writeContract(request) });
-      }
-      await lookUp(campaignId);
-    });
-    row.append(refund);
-  }
-  out.append(row);
 }
 
 // ------------------------------------------------------------------ wiring
@@ -264,6 +171,7 @@ function defaultExpiry() {
 }
 
 $<HTMLInputElement>("#expires").value = defaultExpiry();
+$("#network").textContent = arc.name;
 $("#connect").onclick = () => act(connect, $("#wallet-status"));
 $("#create-form").onsubmit = (e) => {
   e.preventDefault();
@@ -280,7 +188,3 @@ $("#fund").onclick = () => {
   act(fund, $("#fund-status")).finally(() => (btn.disabled = Boolean(plan?.funded)));
 };
 $("#print").onclick = () => window.print();
-$("#manage-form").onsubmit = (e) => {
-  e.preventDefault();
-  act(() => lookUp(BigInt($<HTMLInputElement>("#manage-id").value)), $("#manage-out"));
-};

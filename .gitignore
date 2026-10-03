@@ -9,3 +9,5 @@ node_modules/
 web/dist/
 web/.env.local
 web/.env
+drops/
+data/

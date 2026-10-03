@@ -11,7 +11,7 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let resp: Response;
   try {
     resp = await fetch(config.relayerUrl + path, {
@@ -80,4 +80,69 @@ export const api = {
     post<{ challengeId: string | null; address: Address | null }>("/circle/wallet", { userToken }),
   circleTransfer: (userToken: string, destinationAddress: Address, amount: string) =>
     post<{ challengeId: string }>("/circle/transfer", { userToken, destinationAddress, amount }),
+};
+
+// ------------------------------------------------------------------ dashboards
+
+export interface Campaign {
+  id: number;
+  owner: Address;
+  amount: number;
+  expires_at: number;
+  fee_cap: number;
+  paused: boolean;
+  expired: boolean;
+  created_at: number;
+  created_tx: Hex;
+  drops: number;
+  claimed: number;
+  refunded: number;
+  active: number;
+  distributed: number;
+  locked: number;
+  last_claim_at: number | null;
+}
+
+export interface DropRow {
+  claim_key: Address;
+  status: "active" | "claimed" | "refunded";
+  recipient: Address | null;
+  received: number | null;
+  fee: number | null;
+  claimed_at: number | null;
+  claim_tx: Hex | null;
+  refunded_at: number | null;
+}
+
+export interface Totals {
+  campaigns: number;
+  drops: number;
+  claimed: number;
+  refunded: number;
+  active: number;
+  recipients: number;
+  distributed: number;
+  fees: number;
+  locked: number;
+}
+
+export interface Overview {
+  totals: Totals;
+  claimsByDay: { date: string; claims: number; amount: number }[];
+  campaigns: Campaign[];
+  recentClaims: (DropRow & { campaign_id: number })[];
+  relayer: { address: Address; balanceUsdc: number; lowBalance: boolean; claimCost: number };
+  contract: Address;
+  chainId: number;
+  indexedBlock: number;
+}
+
+export const dashboardApi = {
+  publicStats: () =>
+    request<Pick<Totals, "campaigns" | "claimed" | "recipients" | "distributed"> & { indexedBlock: number }>("/stats/public"),
+  organizerCampaigns: (owner: Address) =>
+    request<{ campaigns: Campaign[]; indexedBlock: number }>(`/organizers/${owner}/campaigns`),
+  campaign: (id: number) => request<Campaign & { drops_list: DropRow[]; indexedBlock: number }>(`/campaigns/${id}`),
+  adminOverview: (token: string) =>
+    request<Overview>("/admin/overview", { headers: { Authorization: `Bearer ${token}` } }),
 };

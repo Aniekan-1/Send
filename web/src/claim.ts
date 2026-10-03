@@ -12,7 +12,10 @@ import { PENDING_GOOGLE, circleEnabled, config, googleEnabled, txLink } from "./
 import { signClaim } from "./eip712";
 import { dateTime, shortAddress, usd } from "./format";
 import { secretFromHash } from "./links";
+import { renderNav } from "./nav";
 import { $, errorMessage, html, raw } from "./ui";
+
+renderNav({ minimal: true });
 
 const SECRET = "dd:claim-secret";
 const app = $("#app");

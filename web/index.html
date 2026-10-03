@@ -3,24 +3,80 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Dollar Drop</title>
+    <title>Dollar Drop · Hand out dollars with a QR code</title>
+    <meta name="description" content="Turn USDC into QR codes anyone can claim with just a phone. No crypto, no app, no gas token. Built on Arc." />
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <header class="brand"><span class="logo">$</span> Dollar Drop</header>
-    <main class="card">
-      <h1>Hand out dollars with a QR code</h1>
-      <p>Fund a batch of drops, print the codes, and anyone who scans one gets digital dollars in seconds. No crypto, no app, nothing to buy.</p>
-      <ol class="steps">
-        <li>Choose an amount and how many people</li>
-        <li>Fund the drops from your wallet</li>
-        <li>Print or share the QR codes</li>
-      </ol>
-      <div class="row">
-        <a class="btn primary" href="/organize.html">Create drops</a>
-        <a class="btn" href="/wallet.html">My wallet</a>
-      </div>
-      <p class="muted small">Runs on Arc, where network fees are paid in dollars, so recipients never need another token. Early prototype: unaudited, drops capped at $50.</p>
+    <main class="container">
+      <section class="hero">
+        <div>
+          <span class="badge good">Live on Arc mainnet</span>
+          <h1 style="margin-top: 16px">Hand out dollars <em>with a QR code.</em></h1>
+          <p class="lead">Fund a batch of drops, print the codes, and anyone who scans one gets digital dollars in seconds. They need nothing: no crypto, no app, no second token.</p>
+          <div class="row">
+            <a class="btn primary" href="/organize.html">Create drops</a>
+            <a class="btn" href="/dashboard.html">Open dashboard</a>
+          </div>
+        </div>
+        <div class="phone" aria-hidden="true">
+          <div class="phone-screen">
+            <span class="eyebrow">You've been sent</span>
+            <span class="amount">$9.99</span>
+            <span class="muted small">Hackathon prize · claim by Friday</span>
+            <span class="btn primary block" style="margin-top: 12px">Continue with email</span>
+            <span class="btn block">I already have a wallet</span>
+            <div class="qr-mini"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="proof card" id="proof" aria-label="Dollar Drop so far">
+        <div class="tile"><span class="label">Sent to recipients</span><span class="value" data-stat="distributed"><span class="skeleton" style="display:inline-block;width:90px"></span></span></div>
+        <div class="tile"><span class="label">People paid</span><span class="value" data-stat="recipients"><span class="skeleton" style="display:inline-block;width:60px"></span></span></div>
+        <div class="tile"><span class="label">Drops claimed</span><span class="value" data-stat="claimed"><span class="skeleton" style="display:inline-block;width:60px"></span></span></div>
+        <div class="tile"><span class="label">Campaigns</span><span class="value" data-stat="campaigns"><span class="skeleton" style="display:inline-block;width:40px"></span></span></div>
+      </section>
+
+      <section class="section">
+        <div class="section-head">
+          <span class="eyebrow">How it works</span>
+          <h2 style="font-size: 1.8rem">Three steps, two minutes</h2>
+        </div>
+        <div class="grid grid-3">
+          <div class="card feature"><span class="step-num">1</span><h3>Choose amount and people</h3><p class="muted">Say 30 drops of $10 for a hackathon. Links are created on your device, never on our servers.</p></div>
+          <div class="card feature"><span class="step-num">2</span><h3>Fund from your wallet</h3><p class="muted">The money waits in an open-source contract on Arc. Anything unclaimed comes back to you.</p></div>
+          <div class="card feature"><span class="step-num">3</span><h3>Print or share the codes</h3><p class="muted">People scan, sign in with email or their own wallet, and the dollars are theirs in seconds.</p></div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-head">
+          <span class="eyebrow">Why Arc</span>
+          <h2 style="font-size: 1.8rem">The fee is paid from the gift itself</h2>
+          <p class="muted">On most blockchains, someone who receives dollars must first buy a second token to pay fees. Arc charges fees in dollars, so Dollar Drop takes a fraction of a cent from each drop, and the recipient never needs anything else.</p>
+        </div>
+        <div class="grid grid-3">
+          <div class="card feature"><h3>Copy-proof claims</h3><p class="muted">Every claim is signed for one recipient. A copied claim can't redirect the money.</p></div>
+          <div class="card feature"><h3>Cancel anytime</h3><p class="muted">Pause a campaign or refund every unclaimed drop from your dashboard, in one click.</p></div>
+          <div class="card feature"><h3>Real dollars, ready to use</h3><p class="muted">Recipients hold USDC they can send on or cash out at exchanges that support Arc.</p></div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="cta">
+          <h2 style="font-size: 1.8rem">Pay a room full of people in two minutes</h2>
+          <p>Prizes, stipends, refunds, rewards. Anyone with a phone can receive.</p>
+          <a class="btn" href="/organize.html">Create drops</a>
+        </div>
+      </section>
     </main>
+    <footer class="footer">
+      <div class="container row between">
+        <span>Dollar Drop · built on Arc · early prototype, unaudited, drops capped at $50</span>
+        <span><a href="/wallet.html">My wallet</a> · <a href="/wallet.html#cash-out">How to cash out</a></span>
+      </div>
+    </footer>
+    <script type="module" src="/src/home.ts"></script>
   </body>
 </html>

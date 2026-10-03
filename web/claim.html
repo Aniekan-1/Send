@@ -8,11 +8,14 @@
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <header class="brand"><span class="logo">$</span> Dollar Drop</header>
-    <main class="card" id="app" aria-live="polite">
-      <p class="muted">Loading…</p>
+    <main class="page container narrow">
+      <section class="card" id="app" aria-live="polite">
+        <div class="skeleton" style="height:18px;width:40%"></div>
+        <div class="skeleton" style="height:56px;width:60%;margin-top:12px"></div>
+        <div class="skeleton" style="height:46px;margin-top:24px"></div>
+      </section>
+      <p class="muted tiny center">Digital dollars (USDC) on Arc. We never ask for passwords or recovery phrases.</p>
     </main>
-    <footer class="foot">Digital dollars (USDC) on Arc. We never ask for passwords or recovery phrases.</footer>
     <script type="module" src="/src/claim.ts"></script>
   </body>
 </html>

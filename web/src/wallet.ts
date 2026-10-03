@@ -6,7 +6,10 @@
 import { type Address, erc20Abi, formatUnits, getAddress, isAddress, parseUnits } from "viem";
 import { PENDING_GOOGLE, USDC, circleEnabled, googleEnabled, publicClient } from "./config";
 import { shortAddress, usd } from "./format";
+import { renderNav } from "./nav";
 import { $, errorMessage, html, raw } from "./ui";
+
+renderNav({ minimal: true });
 
 // Left behind on "Max" so the send can pay its own network fee (a fraction of a cent on Arc).
 const FEE_RESERVE = parseUnits("0.01", 6);

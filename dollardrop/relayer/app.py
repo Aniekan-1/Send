@@ -10,19 +10,28 @@
     POST /circle/wallet        create (if needed) and return the user's Arc wallet
     POST /circle/transfer      start a USDC transfer out of the user's wallet (user approves in the SDK)
 
+    Dashboards (when an event index is attached):
+    GET  /stats/public                      aggregate totals for the landing page
+    GET  /organizers/{address}/campaigns    an organizer's campaigns with progress
+    GET  /campaigns/{id}                    one campaign with every drop
+    GET  /admin/overview                    operator view; needs "Authorization: Bearer <ADMIN_TOKEN>"
+
 Run:  uv run python -m dollardrop.relayer
 """
 
+import hmac
 import logging
 from decimal import Decimal
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from web3 import Web3
 
 from dollardrop.arc import ARC_USDC, NATIVE_DECIMALS
+from dollardrop import stats
 from dollardrop.circle import CircleClient, CircleError
+from dollardrop.indexer import Index, Indexer
 from dollardrop.relayer.core import ClaimRejected, Relayer, Status
 from dollardrop.relayer.ratelimit import RateLimiter
 
@@ -65,6 +74,8 @@ def create_app(
     claims_per_minute: int = 5,
     reads_per_minute: int = 60,
     circle: CircleClient | None = None,
+    indexer: Indexer | None = None,
+    admin_token: str | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Dollar Drop relayer")
     if cors_origins:
@@ -133,6 +144,9 @@ def create_app(
             "fee": result.fee,
         }
 
+    if indexer is not None:
+        _add_dashboard_routes(app, relayer, indexer, admin_token, read_limit, client_ip)
+
     if circle is not None:
         # Money sent to these addresses is lost or stuck, so refuse them up front.
         unsafe = {"0x0000000000000000000000000000000000000000", ARC_USDC.lower(), relayer.contract.address.lower()}
@@ -176,3 +190,59 @@ def _add_circle_routes(app: FastAPI, circle: CircleClient, limit: RateLimiter, c
             raise HTTPException(400, "amount must be more than zero")
         challenge_id = call(request, circle.create_transfer, body.userToken, body.destinationAddress, body.amount)
         return {"challengeId": challenge_id}
+
+
+def _add_dashboard_routes(app: FastAPI, relayer: Relayer, indexer: Indexer, admin_token: str | None,
+                          limit: RateLimiter, client_ip) -> None:
+    ix: Index = indexer.index
+
+    def throttle(request: Request):
+        if not limit.allow(client_ip(request)):
+            raise HTTPException(429, "too many requests")
+
+    def freshness() -> dict:
+        return {"indexedBlock": indexer.last_block}
+
+    @app.get("/stats/public")
+    def public_stats(request: Request):
+        throttle(request)
+        return {**stats.public_totals(ix), **freshness()}
+
+    @app.get("/organizers/{address}/campaigns")
+    def organizer_campaigns(address: str, request: Request):
+        throttle(request)
+        if not Web3.is_address(address):
+            raise HTTPException(400, "bad address")
+        owner = Web3.to_checksum_address(address)
+        return {"campaigns": stats.campaigns(ix, owner=owner), **freshness()}
+
+    @app.get("/campaigns/{campaign_id}")
+    def campaign_detail(campaign_id: int, request: Request):
+        throttle(request)
+        detail = stats.campaign(ix, campaign_id)
+        if detail is None:
+            raise HTTPException(404, "no such campaign (or not indexed yet)")
+        return {**detail, **freshness()}
+
+    @app.get("/admin/overview")
+    def admin_overview(request: Request, authorization: str = Header(default="")):
+        throttle(request)
+        token = authorization.removeprefix("Bearer ").strip()
+        if not admin_token or not hmac.compare_digest(token, admin_token):
+            raise HTTPException(401, "admin token required")
+        balance = relayer.balance()
+        return {
+            "totals": stats.totals(ix),
+            "claimsByDay": stats.claims_by_day(ix, days=30),
+            "campaigns": stats.campaigns(ix),
+            "recentClaims": stats.recent_claims(ix, limit=20),
+            "relayer": {
+                "address": relayer.address,
+                "balanceUsdc": balance / 10**NATIVE_DECIMALS,
+                "lowBalance": balance < relayer.min_balance,
+                "claimCost": relayer.claim_cost(),
+            },
+            "contract": relayer.contract.address,
+            "chainId": relayer.chain_id,
+            **freshness(),
+        }

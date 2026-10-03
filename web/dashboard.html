@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Dashboard · Dollar Drop</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <main class="page container">
+      <div class="row between">
+        <div class="stack" style="gap: 4px">
+          <h1>Dashboard</h1>
+          <p class="muted small" id="freshness">&nbsp;</p>
+        </div>
+        <div class="tabs" role="tablist" aria-label="Dashboard view">
+          <button role="tab" id="tab-organizer" aria-selected="true" aria-controls="view-organizer">My campaigns</button>
+          <button role="tab" id="tab-operator" aria-selected="false" aria-controls="view-operator">Operator</button>
+        </div>
+      </div>
+
+      <section id="view-organizer" role="tabpanel" aria-labelledby="tab-organizer" class="stack-lg"></section>
+      <section id="view-operator" role="tabpanel" aria-labelledby="tab-operator" class="stack-lg" hidden></section>
+      <section id="view-campaign" class="stack-lg" hidden></section>
+    </main>
+    <script type="module" src="/src/dashboard.ts"></script>
+  </body>
+</html>
