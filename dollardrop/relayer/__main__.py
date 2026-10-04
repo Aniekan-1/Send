@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 from eth_account import Account
 from web3 import Web3
 
-from dollardrop.arc import ARC_MAINNET_RPC, usdc
+from dollardrop.arc import ARC_MAINNET_RPC, rpc_provider, usdc
 from dollardrop.circle import BLOCKCHAINS, CircleClient
 from dollardrop.indexer import Index, Indexer
 from dollardrop.compile import load
@@ -46,7 +46,7 @@ def main() -> int:
         print("RELAYER_PRIVATE_KEY is not set (see .env.example)", file=sys.stderr)
         return 1
 
-    w3 = Web3(Web3.HTTPProvider(os.environ.get("ARC_RPC_URL") or ARC_MAINNET_RPC))
+    w3 = Web3(rpc_provider(os.environ.get("ARC_RPC_URL") or ARC_MAINNET_RPC))
     deployment = _deployment(w3.eth.chain_id)
     if not deployment:
         print("no DollarDrop deployment found; set DOLLARDROP_ADDRESS or run scripts/deploy.py", file=sys.stderr)
@@ -64,8 +64,9 @@ def main() -> int:
         circle = CircleClient(circle_key, BLOCKCHAINS[relayer.chain_id])
     # Event index for the dashboards. Delete the file to rebuild it from the chain.
     index = Index(ROOT / "data" / f"index-{relayer.chain_id}.sqlite")
-    indexer = Indexer(w3, contract, index, from_block=deployment["block"])
-    indexer.start_background(interval=5)
+    # Gentle on the shared public RPC so claims keep their share of its rate limit.
+    indexer = Indexer(w3, contract, index, from_block=deployment["block"], pause=0.5)
+    indexer.start_background(interval=10)
 
     admin_token = os.environ.get("ADMIN_TOKEN") or None
     if not admin_token:

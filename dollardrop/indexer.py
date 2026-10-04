@@ -10,6 +10,7 @@ rebuilt from scratch by deleting the database file: `sync()` replays events from
 import logging
 import sqlite3
 import threading
+import time
 from pathlib import Path
 
 from web3 import Web3
@@ -85,12 +86,14 @@ EVENTS = ("CampaignCreated", "DropCreated", "Claimed", "Refunded", "PausedSet")
 
 
 class Indexer:
-    def __init__(self, w3: Web3, contract: Contract, index: Index, *, from_block: int = 0, chunk: int = 5_000):
+    def __init__(self, w3: Web3, contract: Contract, index: Index, *, from_block: int = 0, chunk: int = 5_000,
+                 pause: float = 0):
         self.w3 = w3
         self.contract = contract
         self.index = index
         self.from_block = from_block
         self.chunk = chunk
+        self.pause = pause  # seconds between chunks while catching up, to stay under the RPC's rate limit
         self._block_times: dict[int, int] = {}
 
     @property
@@ -110,18 +113,23 @@ class Indexer:
                 applied += self._apply(raw)
             self.index.set_meta("last_block", str(end))
             start = end + 1
+            if start <= head and self.pause:
+                time.sleep(self.pause)
         return applied
 
     def run_forever(self, interval: float = 5, stop: threading.Event | None = None) -> None:
         stop = stop or threading.Event()
+        wait = interval
         while not stop.is_set():
             try:
                 n = self.sync()
                 if n:
                     log.info("indexed %d events up to block %d", n, self.last_block)
-            except Exception:
-                log.exception("indexer sync failed; retrying")
-            stop.wait(interval)
+                wait = interval
+            except Exception as e:
+                wait = min(wait * 2, 60)  # back off so a rate-limited RPC isn't hammered
+                log.warning("indexer sync failed (%s); retrying in %ds", e, wait)
+            stop.wait(wait)
 
     def start_background(self, interval: float = 5) -> threading.Event:
         stop = threading.Event()

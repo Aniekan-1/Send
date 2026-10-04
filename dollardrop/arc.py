@@ -28,3 +28,20 @@ def native_to_usdc_units(wei: int) -> int:
     """18-decimal native USDC (e.g. a gas cost) -> 6-decimal ERC-20 units, rounded up."""
     scale = 10 ** (NATIVE_DECIMALS - USDC_DECIMALS)
     return -(-wei // scale)
+
+
+def rpc_provider(url: str = ARC_MAINNET_RPC):
+    """HTTP provider that rides out the public RPC's rate limit (429s) on reads.
+
+    web3 already retries on HTTP errors, but five tries within ~2 s is shorter than the RPC's throttle
+    window. Six tries backing off 0.5, 1, 2, 4, 8 s wait it out instead of failing a claim. web3's retry
+    list includes eth_sendRawTransaction; that's safe: a signed transaction's nonce lets it land only once.
+    """
+    from web3 import Web3
+    from web3.providers.rpc.utils import ExceptionRetryConfiguration
+
+    provider = Web3.HTTPProvider(url)
+    provider.exception_retry_configuration = ExceptionRetryConfiguration(
+        errors=provider.exception_retry_configuration.errors, retries=6, backoff_factor=0.5
+    )
+    return provider

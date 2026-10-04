@@ -21,6 +21,7 @@ Run:  uv run python -m dollardrop.relayer
 
 import hmac
 import logging
+import time
 from decimal import Decimal
 
 from fastapi import FastAPI, Header, HTTPException, Request
@@ -111,9 +112,13 @@ def create_app(
             return forwarded
         return request.client.host if request.client else "unknown"
 
+    balance_cache = [0.0, 0]  # [fetched at, balance]: Render's health checks shouldn't each cost an RPC call
+
     @app.get("/health")
     def health():
-        balance = relayer.balance()
+        if time.monotonic() - balance_cache[0] > 30:
+            balance_cache[:] = [time.monotonic(), relayer.balance()]
+        balance = balance_cache[1]
         return {
             "ok": balance >= relayer.min_balance,
             "relayer": relayer.address,
