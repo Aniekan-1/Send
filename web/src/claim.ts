@@ -86,6 +86,7 @@ function showEmail() {
       const { emailLogin, saveSession, walletAddress } = await circle();
       const session = await emailLogin(email);
       saveSession(session);
+      busy("Setting up your wallet…");
       const address = await walletAddress(session);
       showConfirm(address, "your new wallet", true);
     });
@@ -239,6 +240,7 @@ async function main() {
       if (!pending) return showChoose();
       const session = await pending;
       saveSession(session);
+      busy("Setting up your wallet…");
       showConfirm(await walletAddress(session), "your new wallet", true);
     });
   }
