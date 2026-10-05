@@ -292,6 +292,13 @@ table.data tbody tr.clickable:hover { background: var(--surface-2); }
 
 /* ---------------------------------------------------------------- printable QR sheet */
 
+/* Claim links under "Share them": long URLs shrink to one line, buttons stay put. */
+#links, .link-list, .link-row { min-width: 0; } /* grid items: let long URLs shrink instead of widening the card */
+.link-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; max-height: 420px; overflow-y: auto; }
+.link-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; }
+.link-row .btn { flex-shrink: 0; }
+.link-row code { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; word-break: normal; }
+
 .sheet { display: none; }
 @media print {
   @page { margin: 10mm; }

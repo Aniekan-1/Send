@@ -283,6 +283,7 @@ async function showFunded(campaignId: bigint) {
   $("#download-again").onclick = () => downloadBackup(campaignId);
   $("#safe-backup").hidden = !plan.fundingSecret; // exchange-funded: the file is the only key to the money
   $<HTMLAnchorElement>("#track").href = `/dashboard.html#campaign-${campaignId}`;
+  showLinks(plan.links, plan.amount);
   const codes = await Promise.all(plan.links.map((l) => QRCode.toDataURL(l, { margin: 1, width: 360 })));
   $("#sheet").innerHTML = codes
     .map((src, i) => html`
@@ -291,6 +292,36 @@ async function showFunded(campaignId: bigint) {
         <figcaption><strong>${usd(plan!.amount)}</strong><span>Scan to claim · #${campaignId}-${i + 1}</span></figcaption>
       </figure>`)
     .join("");
+}
+
+/** Every claim link, ready to copy or send on WhatsApp, so nobody has to dig them out of the backup file. */
+function showLinks(links: string[], amount: bigint) {
+  const message = (link: string) => `You've been sent ${usd(amount)} with Dollar Drop. Claim it here: ${link}`;
+  const list = $("#link-list");
+  list.innerHTML = links
+    .map((link, i) => html`
+      <li class="link-row">
+        <span class="muted small">#${i + 1}</span>
+        <code title="${link}">${link.replace(/^https?:\/\//, "")}</code>
+        <button class="btn small" data-copy="${i}">Copy</button>
+        <a class="btn small ghost" href="https://wa.me/?text=${encodeURIComponent(message(link))}" target="_blank" rel="noopener noreferrer">WhatsApp</a>
+      </li>`)
+    .join("");
+
+  const copied = (button: HTMLElement, label: string) => {
+    button.textContent = "Copied";
+    setTimeout(() => (button.textContent = label), 1500);
+  };
+  list.onclick = async (e) => {
+    const button = (e.target as HTMLElement).closest<HTMLElement>("[data-copy]");
+    if (!button) return;
+    await navigator.clipboard.writeText(links[Number(button.dataset.copy)]);
+    copied(button, "Copy");
+  };
+  $("#copy-all").onclick = async () => {
+    await navigator.clipboard.writeText(links.join("\n"));
+    copied($("#copy-all"), "Copy all links");
+  };
 }
 
 // ------------------------------------------------------------------ wiring
