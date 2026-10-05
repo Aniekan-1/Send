@@ -47,6 +47,25 @@ function getSdk(): W3SSdk {
   return sdk;
 }
 
+/**
+ * Circle's SDK asks a hidden pw-auth.circle.com window for a device ID and gives up after 10 s. That page
+ * can take longer than that on a cold start (we've measured 13 s, then 0.3 s), so try again before failing.
+ */
+async function getDeviceId(attempts = 3): Promise<string> {
+  for (let i = 1; ; i++) {
+    try {
+      return await getSdk().getDeviceId();
+    } catch (e) {
+      if (i >= attempts) {
+        throw new Error(
+          "Couldn't reach Circle's sign-in service. Check your connection, turn off ad or tracker blockers for this site, and try again.",
+          { cause: e },
+        );
+      }
+    }
+  }
+}
+
 function googleConfig(tokens: DeviceTokens): Configs {
   return {
     appSettings: { appId: config.circleAppId },
@@ -70,7 +89,7 @@ function loginPromise(start: (done: (s: Session) => void, fail: (e: Error) => vo
 
 /** Starts Google sign-in. The page navigates away; call resumeGoogleLogin() when it loads again. */
 export async function startGoogleLogin(): Promise<void> {
-  const deviceId = await getSdk().getDeviceId();
+  const deviceId = await getDeviceId();
   const tokens = await api.circleSocialToken(deviceId);
   sessionStorage.setItem(PENDING_GOOGLE, JSON.stringify(tokens));
   getSdk().updateConfigs(googleConfig(tokens));
@@ -94,7 +113,7 @@ export function resumeGoogleLogin(): Promise<Session> | null {
 
 /** Emails a one-time code and opens Circle's code-entry screen. */
 export async function emailLogin(email: string): Promise<Session> {
-  const deviceId = await getSdk().getDeviceId();
+  const deviceId = await getDeviceId();
   const { deviceToken, deviceEncryptionKey, otpToken } = await api.circleEmailToken(deviceId, email);
 
   return loginPromise((done, fail) => {
