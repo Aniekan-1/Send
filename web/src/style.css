@@ -216,7 +216,11 @@ input:focus { border-color: var(--accent); background: var(--surface); }
 @keyframes spin { to { transform: rotate(360deg); } }
 .skeleton { border-radius: 8px; background: linear-gradient(90deg, var(--surface-2), var(--line), var(--surface-2)); background-size: 200% 100%; animation: shimmer 1.4s infinite; min-height: 1em; }
 @keyframes shimmer { to { background-position: -200% 0; } }
-@media (prefers-reduced-motion: reduce) { *, *::before { animation: none !important; transition: none !important; } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before { animation: none !important; transition: none !important; }
+  /* Still turn the spinner, slowly: it's the only sign a long step hasn't stalled. */
+  .spinner { animation: spin 2.4s linear infinite !important; }
+}
 
 /* ---------------------------------------------------------------- figures */
 

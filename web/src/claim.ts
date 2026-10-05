@@ -7,13 +7,13 @@
 //   the signature to the relayer.
 import { type Address, type Hex, getAddress, isAddress } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { ApiError, type DropInfo, api } from "./api";
+import { ApiError, type DropInfo, TIMED_OUT, api } from "./api";
 import { PENDING_GOOGLE, circleEnabled, config, googleEnabled, txLink } from "./config";
 import { signClaim } from "./eip712";
 import { dateTime, shortAddress, usd } from "./format";
 import { secretFromHash } from "./links";
 import { renderNav } from "./nav";
-import { $, errorMessage, html, raw } from "./ui";
+import { $, errorMessage, html, raw, spinner, startHints } from "./ui";
 
 renderNav({ minimal: true });
 
@@ -134,11 +134,12 @@ function showConfirm(recipient: Address, label: string, viaCircle = false) {
 }
 
 function busy(message: string) {
-  show(html`<div class="spinner" aria-hidden="true"></div><p class="center">${message}</p>`);
+  show(spinner(message));
+  startHints(app);
 }
 
 function showDone(txHash: string, recipient: Address, amount: number, circleWallet: boolean) {
-  const link = txLink(txHash);
+  const link = txHash ? txLink(txHash) : null;
   const next = circleWallet
     ? html`<a class="btn primary" href="/wallet.html">Open my wallet</a>
         <p class="center muted small">Send it to a friend or an exchange from your wallet.</p>`
@@ -181,8 +182,24 @@ async function claim(recipient: Address) {
     showDone(result.txHash, result.recipient, result.amount, recipientIsCircle);
   } catch (e) {
     if (e instanceof ApiError && e.status === 409) return explainUnavailable(e.detail);
+    if (e instanceof ApiError && (e.status === TIMED_OUT || e.status === 0)) return confirmLate(recipient);
     throw e;
   }
+}
+
+/** No answer from the relayer: it may still have sent the claim, so look at the drop before calling it a failure. */
+async function confirmLate(recipient: Address) {
+  busy("Checking whether your dollars arrived…");
+  for (let i = 0; i < 20; i++) {
+    const now = await api.drop(drop.claim_key).catch(() => null);
+    if (now?.status === "claimed") {
+      sessionStorage.removeItem(SECRET);
+      return showDone("", recipient, drop.receive, recipientIsCircle);
+    }
+    if (now && now.status !== "active") return explainUnavailable(`drop is ${now.status}`);
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+  throw new Error("We couldn't confirm your claim yet. Nothing is lost: open this link again in a few minutes to check.");
 }
 
 function explainUnavailable(reason: string) {

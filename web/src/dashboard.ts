@@ -462,15 +462,21 @@ async function openCampaign(id: number) {
   const act = async (fn: () => Promise<void>, done: string) => {
     const err = $("#action-error", host);
     const ok = $("#action-ok", host);
-    err.hidden = ok.hidden = true;
+    err.hidden = true;
+    ok.className = "muted small";
+    ok.textContent = "Sending to Arc… this usually takes a few seconds. Keep this page open.";
+    ok.hidden = false;
     host.querySelectorAll<HTMLButtonElement>("[data-act=pause],[data-act=refund]").forEach((b) => (b.disabled = true));
     try {
       await fn();
+      ok.textContent = "Done on Arc. Updating the numbers…";
       await new Promise((r) => setTimeout(r, 6000)); // let the indexer catch up (it polls every 5 s)
       await load();
+      $("#action-ok", host).className = "ok small";
       $("#action-ok", host).textContent = done;
       $("#action-ok", host).hidden = false;
     } catch (e) {
+      ok.hidden = true;
       err.textContent = errorMessage(e);
       err.hidden = false;
       host.querySelectorAll<HTMLButtonElement>("[data-act=pause],[data-act=refund]").forEach((b) => (b.disabled = false));

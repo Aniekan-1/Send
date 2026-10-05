@@ -11,17 +11,27 @@ export class ApiError extends Error {
   }
 }
 
-export async function request<T>(path: string, init?: RequestInit): Promise<T> {
+/** Status for "no answer in time": the request may still have gone through on the server. */
+export const TIMED_OUT = 408;
+
+export async function request<T>(path: string, init?: RequestInit, timeoutMs = 30_000): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   let resp: Response;
+  let body: { detail?: unknown };
   try {
     resp = await fetch(config.relayerUrl + path, {
       ...init,
+      signal: controller.signal,
       headers: { "Content-Type": "application/json", ...init?.headers },
     });
+    body = await resp.json().catch(() => ({}));
   } catch {
+    if (controller.signal.aborted) throw new ApiError(TIMED_OUT, "The Dollar Drop service didn't answer in time.");
     throw new ApiError(0, "Can't reach the Dollar Drop service. Check your connection and try again.");
+  } finally {
+    clearTimeout(timer);
   }
-  const body = await resp.json().catch(() => ({}));
   if (!resp.ok) {
     const detail = typeof body.detail === "string" ? body.detail : `request failed (${resp.status})`;
     throw new ApiError(resp.status, detail);
@@ -29,7 +39,8 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
-const post = <T>(path: string, body: unknown) => request<T>(path, { method: "POST", body: JSON.stringify(body) });
+const post = <T>(path: string, body: unknown, timeoutMs?: number) =>
+  request<T>(path, { method: "POST", body: JSON.stringify(body) }, timeoutMs);
 
 export type DropStatus = "none" | "active" | "claimed" | "refunded";
 
@@ -67,7 +78,7 @@ export const api = {
   health: () => request<Health>("/health"),
   drop: (claimKey: Address) => request<DropInfo>(`/drops/${claimKey}`),
   claim: (body: { claimKey: Address; recipient: Address; fee: number; signature: Hex }) =>
-    post<ClaimResult>("/claims", body),
+    post<ClaimResult>("/claims", body, 90_000), // the relayer waits for Arc to confirm, with retries
 
   circleSocialToken: (deviceId: string) =>
     post<{ deviceToken: string; deviceEncryptionKey: string }>("/circle/social-token", { deviceId }),

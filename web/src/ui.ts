@@ -29,3 +29,23 @@ export function errorMessage(e: unknown): string {
   if (e && typeof e === "object" && "shortMessage" in e) return String((e as { shortMessage: string }).shortMessage);
   return e instanceof Error ? e.message : String(e);
 }
+
+// Waits that can run long (Circle setting up a wallet, an Arc transaction, a slow relayer). Without a word
+// after a while, a turning spinner looks stuck and people leave.
+const HINTS: [number, string][] = [
+  [8, "Still working. This step can take up to a minute."],
+  [30, "Taking longer than usual. Keep this page open; it will finish on its own."],
+];
+
+/** A spinner with its message, plus a line that fills in as time passes; call startHints() once it's shown. */
+export function spinner(message: string): string {
+  return html`<div class="spinner" aria-hidden="true"></div><p class="center">${message}</p>
+    <p class="center muted small busy-hint" aria-live="polite"></p>`;
+}
+
+/** Fill in the hint line under spinner() over time; stops on its own once the spinner is replaced. */
+export function startHints(root: ParentNode) {
+  const hint = root.querySelector<HTMLElement>(".busy-hint");
+  if (!hint) return;
+  for (const [after, text] of HINTS) setTimeout(() => hint.isConnected && (hint.textContent = text), after * 1000);
+}

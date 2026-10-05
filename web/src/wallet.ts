@@ -7,7 +7,7 @@ import { type Address, erc20Abi, formatUnits, getAddress, isAddress, parseUnits 
 import { PENDING_GOOGLE, USDC, circleEnabled, googleEnabled, publicClient } from "./config";
 import { shortAddress, usd } from "./format";
 import { renderNav } from "./nav";
-import { $, errorMessage, html, raw } from "./ui";
+import { $, errorMessage, html, raw, spinner, startHints } from "./ui";
 
 renderNav({ minimal: true });
 
@@ -26,7 +26,8 @@ function show(markup: string) {
 }
 
 function busy(message: string) {
-  show(html`<div class="spinner" aria-hidden="true"></div><p class="center">${message}</p>`);
+  show(spinner(message));
+  startHints(app);
 }
 
 // ------------------------------------------------------------------ signed out
